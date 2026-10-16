@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import Link from "next/link";
 import { MatchDayBoard } from "@/components/match-day-board";
 import { PublicShell } from "@/components/shell";

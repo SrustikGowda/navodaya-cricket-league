@@ -1,4 +1,4 @@
-export const revalidate = 60;
+export const dynamic = "force-dynamic";
 
 import { HallOfChampions } from "@/components/hall-of-champions";
 import { HeritageClient } from "@/components/heritage-form";

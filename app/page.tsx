@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import Link from "next/link";
 import { PublicShell } from "@/components/shell";
 import { getDb } from "@/lib/db";

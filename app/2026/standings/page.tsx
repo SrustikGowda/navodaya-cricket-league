@@ -1,4 +1,4 @@
-export const revalidate = 30;
+export const dynamic = "force-dynamic";
 
 import { PublicShell } from "@/components/shell";
 import { getDb } from "@/lib/db";
