@@ -1,0 +1,13 @@
+{
+  "name": "Navodaya Cricket League 2026",
+  "short_name": "NCL 2026",
+  "start_url": "/2026",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#10241c",
+  "theme_color": "#10241c",
+  "description": "Fixtures, teams and captain registration for the 15th Navodaya Cricket League.",
+  "icons": [
+    { "src": "/brand/jnv-logo.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

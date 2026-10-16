@@ -1,0 +1,15 @@
+node_modules
+.next
+.env
+.env.local
+.env.*.local
+.data
+playwright-report
+test-results
+blob-report
+*.tsbuildinfo
+coverage
+.vercel
+.netlify
+dist
+out
