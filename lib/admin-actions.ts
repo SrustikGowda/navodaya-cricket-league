@@ -242,11 +242,12 @@ function seasonPatch(value: unknown): SeasonPatch {
     "fixturesOn",
   ] as const;
   for (const key of text) {
-    if (key in row) {
-      const raw = row[key];
-      if (key === "venueName" || key === "venueAddress") patch[key] = String(raw ?? "");
-      else patch[key] = raw == null || String(raw).trim() === "" ? null : String(raw);
-    }
+    if (!(key in row)) continue;
+    const value = row[key] == null ? "" : String(row[key]).trim();
+    if (key === "venueName" || key === "venueAddress") patch[key] = value;
+    else if (key === "startDate" || key === "endDate") {
+      if (value) patch[key] = value;
+    } else patch[key] = value || null;
   }
   for (const key of ["registrationOpensAt", "registrationClosesAt", "rosterLockAt", "eventStartAt", "feeDueAt"] as const) {
     if (key in row) patch[key] = row[key] ? String(row[key]) : null;
