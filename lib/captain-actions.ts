@@ -78,7 +78,12 @@ export async function captainDashboard(actor: Actor) {
   const registration = await getOwnRegistration(db, actor);
   const payments = registration ? await listPaymentsForRegistration(db, registration.id) : [];
   const instructions =
-    registration && season.feePaise && season.feePaise > 0 && paymentCollectionReady(season) && registration.status === "approved"
+    registration &&
+    season.feePaise &&
+    season.feePaise > 0 &&
+    paymentCollectionReady(season) &&
+    registration.status === "approved" &&
+    (registration.batchLeavingYear == null || registration.batchLeavingYear < 2021)
       ? {
           payeeName: season.payeeName,
           upiVpa: season.upiVpa,

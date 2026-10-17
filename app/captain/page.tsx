@@ -43,6 +43,7 @@ export default async function CaptainPage() {
           <p><Link href={`/captain/card?id=${registration.id}`}>Registration card</Link></p>
           <section className="section">
             <h2>Payment</h2>
+            {registration.batchLeavingYear != null && registration.batchLeavingYear >= 2021 ? <p>No entry fee is due. Batches that passed out in 2021 or later are exempt.</p> : null}
             {season.feePaise == null ? <p>The fee has not been decided. No payment is being collected.</p> : null}
             {season.feePaise === 0 ? <p>The organizer set this edition as free.</p> : null}
             {latest ? <p>Latest payment state: {latest.status.replaceAll("_", " ")}{latest.rejectionReason ? ` · ${latest.rejectionReason}` : ""}</p> : null}
@@ -54,7 +55,7 @@ export default async function CaptainPage() {
                 <p><a href={instructions.link}>Open UPI app</a></p>
                 <PaymentBox registrationId={registration.id} note={instructions.note} />
               </div>
-            ) : season.feePaise && season.feePaise > 0 ? <p>Payment instructions appear after approval, and only when the payee and UPI ID are configured.</p> : null}
+            ) : season.feePaise && season.feePaise > 0 && (registration.batchLeavingYear == null || registration.batchLeavingYear < 2021) ? <p>Payment instructions appear after approval, and only when the payee and UPI ID are configured.</p> : null}
             <ul>
               {payments.map((payment) => (
                 <li key={payment.id}>{payment.status} · {payment.transactionReference ?? "no reference"} {payment.receiptPath ? <a href={`/api/receipts/${payment.id}`}>Receipt</a> : null}</li>

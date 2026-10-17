@@ -332,6 +332,19 @@ test("publication consent and the fee acknowledgement are recorded separately", 
   );
   assert.equal(row[0]?.publication_consent, true);
   assert.equal(row[0]?.fee_consent, true);
+  const exempt = await submitPublicRegistration(db, {
+    ...input,
+    teamName: "Exempt XI",
+    batchAdmissionYear: 2014,
+    batchLeavingYear: 2021,
+    captainEmail: "exempt@ncl.test",
+    captainPhone: "9845010101",
+    feeConsent: false,
+  }, NOW);
+  assert.equal(exempt.registration.feeConsent, false);
+  assert.equal(exempt.registration.feeConsentPaise, null);
+  const exemptPayment = await db.query<{ status: string }>("select status from payment_attempts where registration_id = $1", [exempt.registration.id]);
+  assert.equal(exemptPayment[0]?.status, "not_required");
   await removeRegistration(db, admin, saved.registration.id);
   const remaining = await db.query<{ count: number }>("select count(*)::int as count from registrations where id = $1", [saved.registration.id]);
   assert.equal(remaining[0]?.count, 0);

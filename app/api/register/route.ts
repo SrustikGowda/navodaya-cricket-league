@@ -31,7 +31,7 @@ export async function POST(request: Request) {
       status: result.registration.status,
       alreadySubmitted: result.alreadySubmitted,
       teamName: result.registration.teamName,
-      nextAction: registrationFollowUp(season, result.alreadySubmitted),
+      nextAction: registrationFollowUp(season, result.alreadySubmitted, result.registration.batchLeavingYear),
     });
   } catch (error) {
     return errorResponse(error);

@@ -62,6 +62,7 @@ export default async function SeasonHome() {
               {showClose && close ? <span>{close.time}</span> : null}
             </div>
           </div>
+          {season.feePaise != null && season.feePaise > 0 ? <p className="bc-fee-note">Batches that passed out in 2021 or later do not pay the entry fee.</p> : null}
           {season.fixturesOn ? (
             <p className="bc-fixtures">
               <span className="bc-fixtures-kicker">Announcement</span>

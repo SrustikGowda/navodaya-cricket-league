@@ -42,6 +42,7 @@ export default async function RegisterPage() {
                 <strong>{deadline ? deadline.date : "Not set"}</strong>
                 {deadline?.time ? <span className="register-time">{deadline.time}</span> : null}
               </div>
+              {season.feePaise != null && season.feePaise > 0 ? <p className="register-fee-note">Batches that passed out in 2021 or later do not pay the entry fee.</p> : null}
             </section>
             <RegistrationForm
               rulesVersion={season.rulesVersion}

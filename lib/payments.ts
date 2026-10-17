@@ -59,7 +59,7 @@ export async function submitPaymentEvidence(
       throw new DomainError("Payment collection is not open. No fee, payee and UPI ID are configured.", 422, "payment_unconfigured");
     }
     const registrations = await query.query(
-      "select id, status, captain_user_id from registrations where id = $1 and season_id = $2 and captain_user_id = $3",
+      "select id, status, captain_user_id, batch_leaving_year from registrations where id = $1 and season_id = $2 and captain_user_id = $3",
       [registrationId, season.id, actor.id],
     );
     const registration = registrations[0];
@@ -68,6 +68,10 @@ export async function submitPaymentEvidence(
       throw new DomainError("Waitlisted teams are not asked to pay unless an organizer changes that.");
     }
     if (registration.status !== "approved") throw new DomainError("Payment opens after the team is approved.");
+    const leavingYear = num(registration as Row, "batch_leaving_year");
+    if (leavingYear != null && leavingYear >= 2021) {
+      throw new DomainError("No entry fee is due. Batches that passed out in 2021 or later are exempt.");
+    }
     const rows = await query.query(
       `insert into payment_attempts (
         season_id, registration_id, amount_paise, transaction_reference, receipt_path, status, note, submitted_by

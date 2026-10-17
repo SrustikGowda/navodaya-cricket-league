@@ -189,7 +189,8 @@ export async function submitPublicRegistration(
     if (rulesVersion && !input.rulesAcknowledged) {
       throw new DomainError("Acknowledge the current playing conditions.", 422, "incomplete");
     }
-    const feeCharged = season.feePaise != null && season.feePaise > 0;
+    const feeExempt = entryFeeExempt(cleaned.batchLeavingYear);
+    const feeCharged = season.feePaise != null && season.feePaise > 0 && !feeExempt;
     if (feeCharged && input.feeConsent !== true) {
       throw new DomainError("Acknowledge the registration fee.", 422, "incomplete");
     }
@@ -268,12 +269,12 @@ export async function submitPublicRegistration(
           ],
         );
     const saved = mapRegistration(rows[0] as Row);
-    if (season.feePaise === 0) {
+    if (season.feePaise === 0 || feeExempt) {
       await query.query(
         `insert into payment_attempts (season_id, registration_id, amount_paise, status, note)
-         select $1, $2, 0, 'not_required', 'The organizer set a zero fee.'
+         select $1, $2, 0, 'not_required', $3
          where not exists (select 1 from payment_attempts where registration_id = $2 and status = 'not_required')`,
-        [season.id, saved.id],
+        [season.id, saved.id, feeExempt ? "No entry fee is due. Batches that passed out in 2021 or later are exempt." : "The organizer set a zero fee."],
       );
     }
     await writeAudit(query, actor.id, "registration.submit", "registration", saved.id, { reference, source: "form" });
@@ -281,9 +282,16 @@ export async function submitPublicRegistration(
   });
 }
 
-export function registrationFollowUp(season: Pick<Season, "feePaise" | "feeDueAt">, alreadySubmitted: boolean): string {
+export function entryFeeExempt(leavingYear: number | null | undefined): boolean {
+  return leavingYear != null && leavingYear >= 2021;
+}
+
+export function registrationFollowUp(season: Pick<Season, "feePaise" | "feeDueAt">, alreadySubmitted: boolean, leavingYear?: number | null): string {
   if (alreadySubmitted) {
     return "No second application was created. Keep this reference and contact the organizers if a detail needs to change.";
+  }
+  if (entryFeeExempt(leavingYear) && season.feePaise != null && season.feePaise > 0) {
+    return "No entry fee is due. Batches that passed out in 2021 or later are exempt. Keep this reference.";
   }
   if (season.feePaise != null && season.feePaise > 0) {
     const deadline = season.feeDueAt

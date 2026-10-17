@@ -47,7 +47,10 @@ export function RegistrationForm({
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
+  const [leavingYear, setLeavingYear] = useState("");
   const feeRequired = feePaise != null && feePaise > 0 && Boolean(feeLabel);
+  const leavingNumber = Number(leavingYear);
+  const feeExempt = Number.isInteger(leavingNumber) && leavingNumber >= 2021;
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -133,6 +136,7 @@ export function RegistrationForm({
 
   function refreshClaims(event: React.FormEvent<HTMLFormElement>) {
     const form = event.currentTarget;
+    setLeavingYear(String(new FormData(form).get("batchLeavingYear") ?? "").trim());
     const clashes = claimWarnings(form, takenNames, takenBatches);
     setFieldErrors((current) => ({
       ...current,
@@ -207,7 +211,7 @@ export function RegistrationForm({
           <span>I agree to publish the team name, batch, and captain and vice-captain name and mobile number after approval.</span>
           {fieldErrors.consent ? <span className="field-error">{fieldErrors.consent}</span> : null}
         </label>
-        {feeRequired ? (
+        {feeRequired && !feeExempt ? (
           <label className="field check">
             <input type="checkbox" name="feeConsent" required disabled={pending} aria-invalid={Boolean(fieldErrors.fee)} />
             <span>{paymentCopy}</span>
