@@ -2,9 +2,13 @@
 
 import { useRef, useState } from "react";
 import Link from "next/link";
-import { postJson } from "./post-json";
+import { normalizeName } from "@/lib/format";
+import { postJson, RequestError } from "./post-json";
 
-type FieldErrors = Partial<Record<"teamName" | "admission" | "leaving" | "captainName" | "email" | "phone" | "consent" | "fee" | "rules", string>>;
+type FieldErrors = Partial<Record<"teamName" | "admission" | "leaving" | "batch" | "captainName" | "email" | "phone" | "consent" | "fee" | "rules", string>>;
+
+const DUPLICATE_NAME = "This team name is already registered.";
+const DUPLICATE_BATCH = "This batch already has a registration.";
 
 type Confirmation = {
   reference: string;
@@ -28,11 +32,15 @@ export function RegistrationForm({
   feePaise,
   feeLabel,
   dueLabel,
+  takenNames,
+  takenBatches,
 }: {
   rulesVersion: string | null;
   feePaise: number | null;
   feeLabel: string | null;
   dueLabel: string | null;
+  takenNames: string[];
+  takenBatches: { admission: number; leaving: number }[];
 }) {
   const sending = useRef(false);
   const [pending, setPending] = useState(false);
@@ -45,7 +53,7 @@ export function RegistrationForm({
     event.preventDefault();
     if (sending.current) return;
     const form = event.currentTarget;
-    const errors = validate(form);
+    const errors = validate(form, takenNames, takenBatches);
     setFieldErrors(errors);
     setError("");
     const firstInvalid = Object.keys(errors)[0];
@@ -53,6 +61,7 @@ export function RegistrationForm({
       const fieldName: Record<string, string> = {
         teamName: "teamName",
         admission: "batchAdmissionYear",
+        batch: "batchAdmissionYear",
         leaving: "batchLeavingYear",
         captainName: "captainName",
         email: "captainEmail",
@@ -93,7 +102,14 @@ export function RegistrationForm({
         nextAction,
       });
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Nothing was submitted and no reference was issued.");
+      if (caught instanceof RequestError && (caught.code === "duplicate_name" || caught.code === "duplicate_batch")) {
+        const duplicate: FieldErrors = caught.code === "duplicate_name" ? { teamName: DUPLICATE_NAME } : { batch: DUPLICATE_BATCH };
+        setFieldErrors(duplicate);
+        const field = form.querySelector<HTMLElement>(`[name="${caught.code === "duplicate_name" ? "teamName" : "batchAdmissionYear"}"]`);
+        field?.focus();
+      } else {
+        setError(caught instanceof Error ? caught.message : "Nothing was submitted and no reference was issued.");
+      }
     } finally {
       sending.current = false;
       setPending(false);
@@ -111,12 +127,22 @@ export function RegistrationForm({
     );
   }
 
+  function refreshClaims(event: React.FormEvent<HTMLFormElement>) {
+    const form = event.currentTarget;
+    const clashes = claimWarnings(form, takenNames, takenBatches);
+    setFieldErrors((current) => ({
+      ...current,
+      teamName: clashes.teamName ?? (current.teamName === DUPLICATE_NAME ? undefined : current.teamName),
+      batch: clashes.batch ?? (current.batch === DUPLICATE_BATCH ? undefined : current.batch),
+    }));
+  }
+
   const paymentCopy = dueLabel
     ? `I agree to pay ${feeLabel} per team ${dueLabel}.`
     : `I agree to pay ${feeLabel} per team. The payment deadline has not been set.`;
 
   return (
-    <form className="register-form stack" onSubmit={submit} noValidate aria-busy={pending}>
+    <form className="register-form stack" onSubmit={submit} onInput={refreshClaims} noValidate aria-busy={pending}>
       <fieldset className="details" disabled={pending}>
         <legend>Team details</legend>
         <div className="fields">
@@ -128,15 +154,16 @@ export function RegistrationForm({
           <div className="year-row">
             <label className="field">
               <span className="field-label">Admission year</span>
-              <input className="text-input" name="batchAdmissionYear" type="number" inputMode="numeric" required min={1960} max={2100} placeholder="e.g. 2008" autoComplete="off" aria-invalid={Boolean(fieldErrors.admission)} />
+              <input className="text-input" name="batchAdmissionYear" type="number" inputMode="numeric" required min={1960} max={2100} placeholder="e.g. 2008" autoComplete="off" aria-invalid={Boolean(fieldErrors.admission || fieldErrors.batch)} />
               {fieldErrors.admission ? <span className="field-error">{fieldErrors.admission}</span> : null}
             </label>
             <label className="field">
               <span className="field-label">Leaving year</span>
-              <input className="text-input" name="batchLeavingYear" type="number" inputMode="numeric" required min={1960} max={2100} placeholder="e.g. 2015" autoComplete="off" aria-invalid={Boolean(fieldErrors.leaving)} />
+              <input className="text-input" name="batchLeavingYear" type="number" inputMode="numeric" required min={1960} max={2100} placeholder="e.g. 2015" autoComplete="off" aria-invalid={Boolean(fieldErrors.leaving || fieldErrors.batch)} />
               {fieldErrors.leaving ? <span className="field-error">{fieldErrors.leaving}</span> : null}
             </label>
           </div>
+          {fieldErrors.batch ? <p className="field-error" role="alert">{fieldErrors.batch}</p> : null}
         </div>
       </fieldset>
       <fieldset className="details" disabled={pending}>
@@ -187,10 +214,23 @@ export function RegistrationForm({
   );
 }
 
-function validate(form: HTMLFormElement): FieldErrors {
+function claimWarnings(form: HTMLFormElement, names: string[], batches: { admission: number; leaving: number }[]): FieldErrors {
   const read = (name: string) => String(new FormData(form).get(name) ?? "").trim();
   const errors: FieldErrors = {};
-  if (read("teamName").length < 2) errors.teamName = "Enter the team name.";
+  const teamName = read("teamName");
+  if (teamName.length >= 2 && names.includes(normalizeName(teamName))) errors.teamName = DUPLICATE_NAME;
+  const admission = Number(read("batchAdmissionYear"));
+  const leaving = Number(read("batchLeavingYear"));
+  if (Number.isInteger(admission) && Number.isInteger(leaving) && batches.some((batch) => batch.admission === admission && batch.leaving === leaving)) {
+    errors.batch = DUPLICATE_BATCH;
+  }
+  return errors;
+}
+
+function validate(form: HTMLFormElement, names: string[], batches: { admission: number; leaving: number }[]): FieldErrors {
+  const read = (name: string) => String(new FormData(form).get(name) ?? "").trim();
+  const errors: FieldErrors = { ...claimWarnings(form, names, batches) };
+  if (!errors.teamName && read("teamName").length < 2) errors.teamName = "Enter the team name.";
   const admission = Number(read("batchAdmissionYear"));
   const leaving = Number(read("batchLeavingYear"));
   if (!Number.isInteger(admission) || admission < 1960 || admission > 2100) errors.admission = "Enter the admission year.";

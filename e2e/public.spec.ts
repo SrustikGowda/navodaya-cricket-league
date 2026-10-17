@@ -6,7 +6,7 @@ test("public season is honest at the current viewport", async ({ page }, testInf
   await expect(page.getByRole("link", { name: "Registration opens soon" }).first()).toBeVisible();
   await expect(page.getByRole("link", { name: "Captain Login" })).toHaveCount(0);
   await expect(page.getByText("Loyala School Ground").first()).toBeVisible();
-  await expect(page.getByText("Organized by Alumni Batches 2005 & 2012").first()).toBeVisible();
+  await expect(page.getByText("Organized by alumni batch 2005 - 2012.").first()).toBeVisible();
   await expect(page.getByRole("heading", { name: "Sponsors" })).toHaveCount(0);
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(1);

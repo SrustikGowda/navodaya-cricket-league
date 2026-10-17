@@ -282,6 +282,15 @@ test("a public form submits once per email without a sign-in", async () => {
     () => submitPublicRegistration(db, { ...input, captainEmail: "other@ncl.test", captainPhone: "123" }, NOW),
     /mobile/i,
   );
+  await assert.rejects(
+    () => submitPublicRegistration(db, { ...input, teamName: "form   xi", captainEmail: "same-name@ncl.test", captainPhone: "9845011111" }, NOW),
+    /team name is already registered/i,
+  );
+  await assert.rejects(
+    () => submitPublicRegistration(db, { ...input, teamName: "Other XI", captainEmail: "same-batch@ncl.test", captainPhone: "9845022222" }, NOW),
+    /batch already has a registration/i,
+  );
+  await db.close();
 });
 
 test("publication consent and the fee acknowledgement are recorded separately", async () => {

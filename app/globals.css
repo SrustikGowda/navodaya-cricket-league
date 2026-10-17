@@ -750,7 +750,8 @@ th, td { text-align: left; padding: 0.55rem; border-bottom: 1px solid var(--colo
 
 body:has(.home-page),
 body:has(.register-shell),
-body:has(.history-page) {
+body:has(.history-page),
+body:has(.teams-page) {
   background: #070706;
   background-image: none;
 }
@@ -759,7 +760,9 @@ body:has(.home-page)::after,
 body:has(.register-shell)::before,
 body:has(.register-shell)::after,
 body:has(.history-page)::before,
-body:has(.history-page)::after { display: none; }
+body:has(.history-page)::after,
+body:has(.teams-page)::before,
+body:has(.teams-page)::after { display: none; }
 .home-page {
   display: flex;
   flex-direction: column;
@@ -885,24 +888,14 @@ body:has(.history-page)::after { display: none; }
 }
 .bc-primary:hover { background: #f0d48a; }
 .bc-primary:active { transform: translateY(1px); }
-.bc-explore {
-  color: #f4efe4;
-  font-size: 0.95rem;
-  font-weight: 600;
-  text-underline-offset: 0.22em;
-  transition: color 180ms ease;
-}
-.bc-explore:hover { color: #fff; }
-.bc-explore:active { transform: translateY(1px); }
 .bc-credit {
-  max-width: 11rem;
+  max-width: 18rem;
   margin: 0.95rem 0 0;
   color: #a89f90;
   font-size: 0.75rem;
   font-weight: 450;
   line-height: 1.35;
 }
-.bc-credit span { display: block; white-space: nowrap; }
 .bc-sheet, .bc-matches, .bc-teams, .bc-news, .bc-venue {
   width: min(1180px, 100%);
   margin: 32px auto 0;
@@ -1054,7 +1047,10 @@ body:has(.history-page)::after { display: none; }
   letter-spacing: 0.04em;
 }
 .bc-team-copy { min-width: 0; }
-.bc-team-copy strong { display: block; font-size: 1rem; font-weight: 700; line-height: 1.25; }
+.bc-team-copy strong { display: block; overflow-wrap: anywhere; font-size: 1rem; font-weight: 700; line-height: 1.25; }
+.teams-page h1 { margin: 4px 0 6px; font-size: clamp(1.85rem, 7vw, 2.5rem); letter-spacing: -0.03em; }
+.teams-lead { margin: 0 0 16px; color: #b7ae9e; }
+.teams-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .bc-team-copy span { display: block; margin-top: 0.1rem; color: #b7ae9e; font-size: 0.875rem; }
 .bc-arrow { color: #e4c36a; font-size: 1.15rem; line-height: 1; }
 .bc-matches li { display: grid; gap: 0.15rem; }

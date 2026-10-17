@@ -12,7 +12,7 @@ export async function seedDatabase(db: Db): Promise<void> {
         start_date, end_date, timezone, venue_name, venue_address, maps_url, active
       ) values (
         2026, '2026', 'Navodaya Cricket League 2026', 'NCL 2026', 15,
-        'JNVCKM Alumni Group', 'Organized by Alumni Batch 2005–2012',
+        'JNVCKM Alumni Group', 'Organized by alumni batch 2005 - 2012.',
         '2026-11-28', '2026-11-29', 'Asia/Kolkata', 'Loyala School Ground',
         'Kothnur Main Rd, Kothnur, Kalena Agrahara, Bengaluru, 560076', $1, true
       ) returning id`,

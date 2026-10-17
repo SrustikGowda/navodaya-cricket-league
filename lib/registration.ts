@@ -192,6 +192,7 @@ export async function submitPublicRegistration(
       throw new DomainError("Acknowledge the registration fee.", 422, "incomplete");
     }
     const feeConsent = feeCharged && input.feeConsent === true;
+    await assertTeamNameAvailable(query, season.id, existing?.id ?? null, cleaned.teamName);
     await assertBatchAvailable(query, season, existing?.id ?? null, cleaned.batchAdmissionYear, cleaned.batchLeavingYear);
     const reference = existing?.reference ?? (await allocateReference(query, season.year));
     const rows = existing
@@ -318,6 +319,44 @@ function validYear(value: number | null): value is number {
   return value != null && Number.isInteger(value) && value >= 1960 && value <= 2100;
 }
 
+export async function listRegistrationClaims(db: Queryable, seasonId: string) {
+  const rows = await db.query(
+    `select team_name, batch_admission_year, batch_leaving_year
+     from registrations
+     where season_id = $1 and status not in ('withdrawn', 'rejected')`,
+    [seasonId],
+  );
+  const names = new Set<string>();
+  const batches: { admission: number; leaving: number }[] = [];
+  const seenBatches = new Set<string>();
+  for (const row of rows) {
+    const name = normalizeName(String(row.team_name ?? ""));
+    if (name.length >= 2) names.add(name);
+    const admission = num(row, "batch_admission_year");
+    const leaving = num(row, "batch_leaving_year");
+    if (admission == null || leaving == null) continue;
+    const key = `${admission}-${leaving}`;
+    if (seenBatches.has(key)) continue;
+    seenBatches.add(key);
+    batches.push({ admission, leaving });
+  }
+  return { names: [...names], batches };
+}
+
+async function assertTeamNameAvailable(query: Queryable, seasonId: string, registrationId: string | null, teamName: string) {
+  const key = normalizeName(teamName);
+  if (key.length < 2) return;
+  const clash = await query.query(
+    `select id from registrations
+     where season_id = $1
+       and ($2::uuid is null or id <> $2)
+       and status not in ('withdrawn', 'rejected')
+       and lower(regexp_replace(btrim(team_name), '\\s+', ' ', 'g')) = $3`,
+    [seasonId, registrationId, key],
+  );
+  if (clash.length > 0) throw new DomainError("This team name is already registered.", 409, "duplicate_name");
+}
+
 async function assertBatchAvailable(
   query: Queryable,
   season: Season,
@@ -325,16 +364,14 @@ async function assertBatchAvailable(
   admission: number | null,
   leaving: number | null,
 ) {
-  if (!season.oneTeamPerBatch || admission == null || leaving == null) return;
+  if (admission == null || leaving == null) return;
   const clash = await query.query(
     `select id from registrations
      where season_id = $1 and ($2::uuid is null or id <> $2) and batch_admission_year = $3 and batch_leaving_year = $4
        and status not in ('withdrawn', 'rejected')`,
     [season.id, registrationId, admission, leaving],
   );
-  if (clash.length > 0) {
-    throw new DomainError("Another active application already uses this batch, and the organizer has limited the season to one team per batch.");
-  }
+  if (clash.length > 0) throw new DomainError("This batch already has a registration.", 409, "duplicate_batch");
 }
 
 export async function createDraft(db: Db, actor: Actor, now = new Date()): Promise<Registration> {
@@ -386,6 +423,13 @@ export async function updateRegistration(
     };
     if (years.admission != null && years.leaving != null && years.leaving < years.admission) {
       throw new DomainError("The leaving year cannot be earlier than the admission year.");
+    }
+    const nextName = patch.teamName?.trim() ?? current.teamName;
+    if (normalizeName(nextName) !== normalizeName(current.teamName)) {
+      await assertTeamNameAvailable(query, season.id, current.id, nextName);
+    }
+    if (years.admission !== current.batchAdmissionYear || years.leaving !== current.batchLeavingYear) {
+      await assertBatchAvailable(query, season, current.id, years.admission, years.leaving);
     }
     const acknowledge = patch.rulesAcknowledged === true;
     const rows = await query.query(
@@ -499,17 +543,8 @@ export async function submitRegistration(
         cricheroesUrl: player.cricheroesUrl,
       })),
     );
-    if (season.oneTeamPerBatch && current.batchAdmissionYear != null && current.batchLeavingYear != null) {
-      const clash = await query.query(
-        `select id from registrations
-         where season_id = $1 and id <> $2 and batch_admission_year = $3 and batch_leaving_year = $4
-           and status not in ('withdrawn', 'rejected')`,
-        [season.id, current.id, current.batchAdmissionYear, current.batchLeavingYear],
-      );
-      if (clash.length > 0) {
-        throw new DomainError("Another active application already uses this batch, and the organizer has limited the season to one team per batch.");
-      }
-    }
+    await assertTeamNameAvailable(query, season.id, current.id, current.teamName);
+    await assertBatchAvailable(query, season, current.id, current.batchAdmissionYear, current.batchLeavingYear);
     const review = await hasNameReview(query, season.id, current.id);
     const reference = current.reference ?? (await allocateReference(query, season.year));
     const rows = await query.query(

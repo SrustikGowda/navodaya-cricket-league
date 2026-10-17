@@ -38,9 +38,8 @@ export default async function SeasonHome() {
           <p className="bc-place">{season.venueName.trim()}, Bengaluru</p>
           <div className="bc-actions">
             <Link className="bc-primary" href="/2026/register">{registerLabel}</Link>
-            <Link className="bc-explore" href="/2026/teams">Explore teams</Link>
           </div>
-          <p className="bc-credit">Organized by alumni batches <span>2005 &amp; 2012</span></p>
+          <p className="bc-credit">Organized by alumni batch 2005 - 2012.</p>
         </div>
       </section>
 

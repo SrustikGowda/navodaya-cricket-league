@@ -4,6 +4,7 @@ import { PublicShell } from "@/components/shell";
 import { getActor } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { formatEventDates, formatInrFromPaise, formatIst } from "@/lib/format";
+import { listRegistrationClaims } from "@/lib/registration";
 import { getActiveSeason, registrationAvailability, registrationPhase, registrationReadiness } from "@/lib/season";
 
 export const metadata = { title: "Register", robots: { index: false, follow: false } };
@@ -16,6 +17,7 @@ export default async function RegisterPage() {
   const readiness = registrationReadiness(season);
   const availability = registrationAvailability(season);
   const actor = await getActor();
+  const claims = await listRegistrationClaims(db, season.id);
   const when = formatEventDates(season.startDate, season.endDate);
   const open = phase === "open";
   const canSubmit = availability.accepting;
@@ -46,6 +48,8 @@ export default async function RegisterPage() {
               feePaise={season.feePaise}
               feeLabel={season.feePaise != null && season.feePaise > 0 ? formatInrFromPaise(season.feePaise) : null}
               dueLabel={season.feeDueAt ? `by ${formatIst(season.feeDueAt)}` : null}
+              takenNames={claims.names}
+              takenBatches={claims.batches}
             />
           </>
         ) : (
