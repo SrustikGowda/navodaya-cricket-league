@@ -38,7 +38,7 @@ body {
   display: flex;
   flex-direction: column;
   overflow-x: hidden;
-  background: #050403 url("/theme/bg-cricket-stadium.png") center top / cover no-repeat fixed;
+  background: #050403 url("/theme/bg-cricket-stadium.webp") center top / cover no-repeat fixed;
   color: #fff;
   font-family: var(--font-sans);
   line-height: 1.55;
@@ -193,7 +193,7 @@ a { color: inherit; }
   margin-top: 28px;
   background:
     linear-gradient(180deg, rgba(7, 7, 6, 0.42) 0%, rgba(7, 7, 6, 0.78) 200px, #070706 340px),
-    url("/theme/bg-cricket-stadium.png") center 22% / cover no-repeat;
+    url("/theme/bg-cricket-stadium.webp") center 22% / cover no-repeat;
   background-size: auto, 100% 340px;
 }
 .register-page { max-width: 40rem; margin: 0 auto; padding: 0 16px 1.25rem; }
@@ -821,7 +821,7 @@ body:has(.teams-page)::after { display: none; }
   padding: 1.35rem 22px 1.5rem;
   background:
     linear-gradient(105deg, rgba(5, 5, 4, 0.94) 0%, rgba(5, 5, 4, 0.78) 52%, rgba(5, 5, 4, 0.42) 100%),
-    url("/theme/bg-cricket-stadium.png") center 28% / cover no-repeat;
+    url("/theme/bg-cricket-stadium.webp") center 28% / cover no-repeat;
 }
 .bc-hero-art { position: absolute; inset: 0; pointer-events: none; }
 .bc-fifteen {
