@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import Link from "next/link";
 import { PublicShell } from "@/components/shell";
 import { getDb } from "@/lib/db";
+import { contactLine } from "@/lib/format";
 import { listPublicTeams } from "@/lib/public-data";
 
 export const metadata = { title: "Registered teams" };
@@ -29,6 +30,7 @@ export default async function TeamsPage() {
                       {team.batchAdmissionYear != null && team.batchLeavingYear != null ? (
                         <span>Batch {team.batchAdmissionYear}–{team.batchLeavingYear}</span>
                       ) : null}
+                      <Officers captainName={team.captainName} captainPhone={team.captainPhone} viceCaptainName={team.viceCaptainName} viceCaptainPhone={team.viceCaptainPhone} />
                     </span>
                     <span className="bc-arrow" aria-hidden="true">→</span>
                   </Link>
@@ -39,6 +41,18 @@ export default async function TeamsPage() {
         )}
       </div>
     </PublicShell>
+  );
+}
+
+function Officers({ captainName, captainPhone, viceCaptainName, viceCaptainPhone }: { captainName: string | null; captainPhone: string | null; viceCaptainName: string | null; viceCaptainPhone: string | null }) {
+  const captain = contactLine("Captain", captainName, captainPhone);
+  const vice = contactLine("Vice-captain", viceCaptainName, viceCaptainPhone);
+  if (!captain && !vice) return null;
+  return (
+    <>
+      {captain ? <span className="bc-officer">{captain}</span> : null}
+      {vice ? <span className="bc-officer">{vice}</span> : null}
+    </>
   );
 }
 

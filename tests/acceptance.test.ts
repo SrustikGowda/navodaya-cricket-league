@@ -268,9 +268,13 @@ test("a public form submits once per email without a sign-in", async () => {
     captainPhone: "9845012345",
     publicationConsent: true,
     rulesAcknowledged: true,
+    viceCaptainName: "Form Vice",
+    viceCaptainPhone: "9845033333",
   };
   const first = await submitPublicRegistration(db, input, NOW);
   assert.equal(first.alreadySubmitted, false);
+  assert.equal(first.registration.viceCaptainName, "Form Vice");
+  assert.equal(first.registration.viceCaptainPhone, "9845033333");
   assert.equal(first.registration.status, "submitted");
   assert.match(first.registration.reference ?? "", /^NCL26-/);
   const again = await submitPublicRegistration(db, input, NOW);
@@ -289,6 +293,10 @@ test("a public form submits once per email without a sign-in", async () => {
   await assert.rejects(
     () => submitPublicRegistration(db, { ...input, teamName: "Other XI", captainEmail: "same-batch@ncl.test", captainPhone: "9845022222" }, NOW),
     /batch already has a registration/i,
+  );
+  await assert.rejects(
+    () => submitPublicRegistration(db, { ...input, teamName: "Vice XI", batchAdmissionYear: 2011, batchLeavingYear: 2018, captainEmail: "bad-vice@ncl.test", captainPhone: "9845044444", viceCaptainPhone: "12345" }, NOW),
+    /vice-captain mobile/i,
   );
   await db.close();
 });

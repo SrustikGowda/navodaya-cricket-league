@@ -1052,6 +1052,13 @@ body:has(.teams-page)::after { display: none; }
 .teams-lead { margin: 0 0 16px; color: #b7ae9e; }
 .teams-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .bc-team-copy span { display: block; margin-top: 0.1rem; color: #b7ae9e; font-size: 0.875rem; }
+.bc-team-copy .bc-officer { color: #d9d1c3; font-size: 0.8125rem; }
+.teams-list .bc-team { align-items: start; }
+.teams-list .bc-mono, .teams-list .bc-arrow { margin-top: 0.35rem; }
+.field-label .optional { margin-left: 0.35rem; color: #a89f90; font-size: 0.8rem; font-weight: 500; letter-spacing: 0; text-transform: none; }
+.team-officers { display: grid; gap: 0.35rem; margin: 0.8rem 0 0; }
+.team-officers p { margin: 0; }
+.team-officers a { color: #e4c36a; }
 .bc-arrow { color: #e4c36a; font-size: 1.15rem; line-height: 1; }
 .bc-matches li { display: grid; gap: 0.15rem; }
 .bc-matches a { color: #f4efe4; font-size: 1rem; font-weight: 650; }

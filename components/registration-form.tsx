@@ -5,7 +5,7 @@ import Link from "next/link";
 import { normalizeName } from "@/lib/format";
 import { postJson, RequestError } from "./post-json";
 
-type FieldErrors = Partial<Record<"teamName" | "admission" | "leaving" | "batch" | "captainName" | "email" | "phone" | "consent" | "fee" | "rules", string>>;
+type FieldErrors = Partial<Record<"teamName" | "admission" | "leaving" | "batch" | "captainName" | "email" | "phone" | "viceName" | "vicePhone" | "consent" | "fee" | "rules", string>>;
 
 const DUPLICATE_NAME = "This team name is already registered.";
 const DUPLICATE_BATCH = "This batch already has a registration.";
@@ -66,6 +66,8 @@ export function RegistrationForm({
         captainName: "captainName",
         email: "captainEmail",
         phone: "captainPhone",
+        viceName: "viceCaptainName",
+        vicePhone: "viceCaptainPhone",
         consent: "publicationConsent",
         fee: "feeConsent",
         rules: "rulesAcknowledged",
@@ -85,6 +87,8 @@ export function RegistrationForm({
         captainName: String(data.get("captainName") ?? ""),
         captainEmail: String(data.get("captainEmail") ?? ""),
         captainPhone: String(data.get("captainPhone") ?? ""),
+        viceCaptainName: String(data.get("viceCaptainName") ?? ""),
+        viceCaptainPhone: String(data.get("viceCaptainPhone") ?? ""),
         publicationConsent: data.get("publicationConsent") === "on",
         feeConsent: data.get("feeConsent") === "on",
         rulesAcknowledged: data.get("rulesAcknowledged") === "on",
@@ -184,13 +188,23 @@ export function RegistrationForm({
             <input className="text-input" name="captainPhone" type="tel" required autoComplete="tel" inputMode="tel" aria-invalid={Boolean(fieldErrors.phone)} />
             {fieldErrors.phone ? <span className="field-error">{fieldErrors.phone}</span> : null}
           </label>
-          <p className="register-privacy">Your contact details are only shared with the organizers.</p>
+          <label className="field">
+            <span className="field-label">Vice-captain name <span className="optional">Optional</span></span>
+            <input className="text-input" name="viceCaptainName" type="text" autoComplete="name" aria-invalid={Boolean(fieldErrors.viceName)} />
+            {fieldErrors.viceName ? <span className="field-error">{fieldErrors.viceName}</span> : null}
+          </label>
+          <label className="field">
+            <span className="field-label">Vice-captain mobile <span className="optional">Optional</span></span>
+            <input className="text-input" name="viceCaptainPhone" type="tel" autoComplete="tel" inputMode="tel" aria-invalid={Boolean(fieldErrors.vicePhone)} />
+            {fieldErrors.vicePhone ? <span className="field-error">{fieldErrors.vicePhone}</span> : null}
+          </label>
+          <p className="register-privacy">Email stays with the organizers. After approval, the team list shows the captain and vice-captain name and mobile number.</p>
         </div>
       </fieldset>
       <div className="agreements">
         <label className="field check">
           <input type="checkbox" name="publicationConsent" required disabled={pending} aria-invalid={Boolean(fieldErrors.consent)} />
-          <span>I agree to publish the team name and batch after approval.</span>
+          <span>I agree to publish the team name, batch, and captain and vice-captain name and mobile number after approval.</span>
           {fieldErrors.consent ? <span className="field-error">{fieldErrors.consent}</span> : null}
         </label>
         {feeRequired ? (
@@ -241,6 +255,11 @@ function validate(form: HTMLFormElement, names: string[], batches: { admission: 
   const digits = read("captainPhone").replace(/\D/g, "");
   const local = digits.length === 12 && digits.startsWith("91") ? digits.slice(2) : digits.length === 11 && digits.startsWith("0") ? digits.slice(1) : digits;
   if (!/^[6-9]\d{9}$/.test(local)) errors.phone = "Enter a valid Indian mobile number.";
+  const viceName = read("viceCaptainName");
+  const viceDigits = read("viceCaptainPhone").replace(/\D/g, "");
+  const viceLocal = viceDigits.length === 12 && viceDigits.startsWith("91") ? viceDigits.slice(2) : viceDigits.length === 11 && viceDigits.startsWith("0") ? viceDigits.slice(1) : viceDigits;
+  if (viceName && viceName.length < 2) errors.viceName = "Enter the vice-captain's name, or leave it blank.";
+  if (viceDigits && !/^[6-9]\d{9}$/.test(viceLocal)) errors.vicePhone = "Enter a valid vice-captain mobile number, or leave it blank.";
   const consent = form.querySelector<HTMLInputElement>("[name='publicationConsent']");
   const fee = form.querySelector<HTMLInputElement>("[name='feeConsent']");
   const rules = form.querySelector<HTMLInputElement>("[name='rulesAcknowledged']");

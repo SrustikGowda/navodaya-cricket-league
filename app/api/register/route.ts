@@ -18,6 +18,8 @@ export async function POST(request: Request) {
       captainName: typeof body.captainName === "string" ? body.captainName : "",
       captainEmail: typeof body.captainEmail === "string" ? body.captainEmail : "",
       captainPhone: typeof body.captainPhone === "string" ? body.captainPhone : "",
+      viceCaptainName: typeof body.viceCaptainName === "string" ? body.viceCaptainName : "",
+      viceCaptainPhone: typeof body.viceCaptainPhone === "string" ? body.viceCaptainPhone : "",
       publicationConsent: body.publicationConsent === true,
       feeConsent: body.feeConsent === true,
       rulesAcknowledged: body.rulesAcknowledged === true,

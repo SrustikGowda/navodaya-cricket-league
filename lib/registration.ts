@@ -150,6 +150,8 @@ export type PublicRegistrationInput = {
   captainName: string;
   captainEmail: string;
   captainPhone: string;
+  viceCaptainName?: string;
+  viceCaptainPhone?: string;
   publicationConsent: boolean;
   feeConsent?: boolean;
   rulesAcknowledged: boolean;
@@ -204,19 +206,21 @@ export async function submitPublicRegistration(
             captain_name = $4,
             captain_email = $5,
             captain_phone = $6,
+            vice_captain_name = $7,
+            vice_captain_phone = $8,
             publication_consent = true,
-            fee_consent = $7,
-            fee_consent_at = case when $7 then now() else null end,
-            fee_consent_paise = $8,
-            fee_consent_due_at = $9,
-            rules_version = $10,
-            rules_acknowledged_at = case when $11 then now() else null end,
+            fee_consent = $9,
+            fee_consent_at = case when $9 then now() else null end,
+            fee_consent_paise = $10,
+            fee_consent_due_at = $11,
+            rules_version = $12,
+            rules_acknowledged_at = case when $13 then now() else null end,
             status = 'submitted',
-            reference = $12,
+            reference = $14,
             submitted_at = coalesce(submitted_at, now()),
             version = version + 1,
             updated_at = now()
-           where id = $13 returning *`,
+           where id = $15 returning *`,
           [
             cleaned.teamName,
             cleaned.batchAdmissionYear,
@@ -224,6 +228,8 @@ export async function submitPublicRegistration(
             cleaned.captainName,
             cleaned.captainEmail,
             cleaned.captainPhone,
+            cleaned.viceCaptainName,
+            cleaned.viceCaptainPhone,
             feeConsent,
             feeConsent ? season.feePaise : null,
             feeConsent ? season.feeDueAt : null,
@@ -237,9 +243,10 @@ export async function submitPublicRegistration(
           `insert into registrations (
             season_id, captain_user_id, reference, status, team_name,
             batch_admission_year, batch_leaving_year, captain_name, captain_email, captain_phone,
+            vice_captain_name, vice_captain_phone,
             rules_version, rules_acknowledged_at, publication_consent,
             fee_consent, fee_consent_at, fee_consent_paise, fee_consent_due_at, submitted_at
-          ) values ($1, $2, $3, 'submitted', $4, $5, $6, $7, $8, $9, $10, case when $11 then now() else null end, true, $12, case when $12 then now() else null end, $13, $14, now())
+          ) values ($1, $2, $3, 'submitted', $4, $5, $6, $7, $8, $9, $10, $11, $12, case when $13 then now() else null end, true, $14, case when $14 then now() else null end, $15, $16, now())
           returning *`,
           [
             season.id,
@@ -251,6 +258,8 @@ export async function submitPublicRegistration(
             cleaned.captainName,
             cleaned.captainEmail,
             cleaned.captainPhone,
+            cleaned.viceCaptainName,
+            cleaned.viceCaptainPhone,
             rulesVersion,
             Boolean(rulesVersion),
             feeConsent,
@@ -291,7 +300,8 @@ function cleanPublicRegistration(input: PublicRegistrationInput) {
   const captainName = input.captainName.trim();
   const captainEmail = input.captainEmail.trim().toLowerCase();
   const captainPhone = normalizePhone(input.captainPhone);
-  const problems: string[] = [];
+  const vice = cleanViceCaptain(input.viceCaptainName, input.viceCaptainPhone);
+  const problems: string[] = [...vice.problems];
   if (teamName.length < 2) problems.push("Add the team name.");
   if (!validYear(input.batchAdmissionYear) || !validYear(input.batchLeavingYear)) {
     problems.push("Add the batch admission and leaving years.");
@@ -310,9 +320,21 @@ function cleanPublicRegistration(input: PublicRegistrationInput) {
     captainName,
     captainEmail,
     captainPhone,
+    viceCaptainName: vice.name,
+    viceCaptainPhone: vice.phone,
     batchAdmissionYear: input.batchAdmissionYear,
     batchLeavingYear: input.batchLeavingYear,
   };
+}
+
+function cleanViceCaptain(name: string | undefined, phone: string | undefined) {
+  const trimmed = (name ?? "").trim().replace(/\s+/g, " ");
+  const rawPhone = (phone ?? "").trim();
+  const problems: string[] = [];
+  if (trimmed && trimmed.length < 2) problems.push("Enter the vice-captain's name, or leave it blank.");
+  const normalized = rawPhone ? normalizePhone(rawPhone) : null;
+  if (rawPhone && !normalized) problems.push("Enter a valid vice-captain mobile number, or leave it blank.");
+  return { name: trimmed.length >= 2 ? trimmed : null, phone: normalized, problems };
 }
 
 function validYear(value: number | null): value is number {

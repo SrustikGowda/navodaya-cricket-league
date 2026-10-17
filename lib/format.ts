@@ -116,6 +116,19 @@ export function slugify(input: string): string {
   return slug || "team";
 }
 
+export function contactLine(role: string, name: string | null | undefined, phone: string | null | undefined): string | null {
+  const mobile = formatIndianMobile(phone);
+  const parts = [name?.trim(), mobile].filter(Boolean);
+  if (parts.length === 0) return null;
+  return `${role} ${parts.join(" · ")}`;
+}
+
+export function formatIndianMobile(value: string | null | undefined): string | null {
+  const local = value ? normalizePhone(value) : null;
+  if (!local) return null;
+  return `${local.slice(0, 5)} ${local.slice(5)}`;
+}
+
 export function normalizePhone(input: string): string | null {
   const digits = input.replace(/\D/g, "");
   const local =

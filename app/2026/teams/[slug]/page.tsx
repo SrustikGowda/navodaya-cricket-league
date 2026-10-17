@@ -6,7 +6,7 @@ import { PublicShell } from "@/components/shell";
 import { RememberTeam } from "@/components/my-team";
 import { ShareBar } from "@/components/share-bar";
 import { getDb } from "@/lib/db";
-import { formatIst } from "@/lib/format";
+import { formatIndianMobile, formatIst } from "@/lib/format";
 import { getPublicTeam } from "@/lib/public-data";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
@@ -24,6 +24,10 @@ export default async function TeamPage({ params }: { params: Promise<{ slug: str
     <PublicShell>
       <p className="kicker">Batch {team.batchAdmissionYear}–{team.batchLeavingYear}</p>
       <h1>{team.teamName}</h1>
+      <div className="team-officers">
+        <Officer role="Captain" name={team.captainName} phone={team.captainPhone} />
+        <Officer role="Vice-captain" name={team.viceCaptainName} phone={team.viceCaptainPhone} />
+      </div>
       {logo ? <img src={`/api/media/${logo}`} alt="" /> : null}
       <RememberTeam id={team.id} name={team.teamName} />
       <ShareBar url={`/2026/teams/${team.slug}`} text={`NCL 2026 · ${team.teamName}`} />
@@ -44,5 +48,17 @@ export default async function TeamPage({ params }: { params: Promise<{ slug: str
         ))}
       </section>
     </PublicShell>
+  );
+}
+
+function Officer({ role, name, phone }: { role: string; name: string | null; phone: string | null }) {
+  const mobile = formatIndianMobile(phone);
+  if (!name?.trim() && !mobile) return null;
+  const digits = phone?.replace(/\D/g, "").slice(-10);
+  return (
+    <p>
+      {role}{name?.trim() ? ` ${name.trim()}` : ""}
+      {mobile && digits ? <> · <a href={`tel:+91${digits}`}>{mobile}</a></> : null}
+    </p>
   );
 }

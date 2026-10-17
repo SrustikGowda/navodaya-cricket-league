@@ -77,7 +77,11 @@ export async function listPublicTeams(db: Queryable) {
   return remember("public-teams", 20_000, async () => {
     const season = await getActiveSeason(db);
     const rows = await db.query(
-      "select * from public_teams where season_id = $1 order by team_name",
+      `select t.*, r.captain_name, r.captain_phone, r.vice_captain_name, r.vice_captain_phone
+       from public_teams t
+       join registrations r on r.id = t.id
+       where t.season_id = $1
+       order by t.team_name`,
       [season.id],
     );
     return rows.map(mapPublicTeam);
@@ -86,7 +90,13 @@ export async function listPublicTeams(db: Queryable) {
 
 export async function getPublicTeam(db: Queryable, slug: string) {
   const season = await getActiveSeason(db);
-  const rows = await db.query("select * from public_teams where season_id = $1 and slug = $2", [season.id, slug]);
+  const rows = await db.query(
+    `select t.*, r.captain_name, r.captain_phone, r.vice_captain_name, r.vice_captain_phone
+     from public_teams t
+     join registrations r on r.id = t.id
+     where t.season_id = $1 and t.slug = $2`,
+    [season.id, slug],
+  );
   if (!rows[0]) return null;
   const team = mapPublicTeam(rows[0]);
   const squad = await db.query(
@@ -209,5 +219,9 @@ function mapPublicTeam(row: Row) {
     batchLeavingYear: num(row, "batch_leaving_year"),
     logoPath: str(row, "logo_path"),
     cricheroesTeamUrl: str(row, "cricheroes_team_url"),
+    captainName: str(row, "captain_name"),
+    captainPhone: str(row, "captain_phone"),
+    viceCaptainName: str(row, "vice_captain_name"),
+    viceCaptainPhone: str(row, "vice_captain_phone"),
   };
 }
