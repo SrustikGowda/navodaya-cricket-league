@@ -1071,11 +1071,95 @@ body:has(.teams-page)::after { display: none; }
 .bc-team-copy strong { display: block; overflow-wrap: anywhere; font-size: 1rem; font-weight: 700; line-height: 1.25; }
 .teams-page h1 { margin: 4px 0 6px; font-size: clamp(1.85rem, 7vw, 2.5rem); letter-spacing: -0.03em; }
 .teams-lead { margin: 0 0 16px; color: #b7ae9e; }
-.teams-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .bc-team-copy span { display: block; margin-top: 0.1rem; color: #b7ae9e; font-size: 0.875rem; }
-.bc-team-copy .bc-officer { color: #d9d1c3; font-size: 0.8125rem; }
-.teams-list .bc-team { align-items: start; }
-.teams-list .bc-mono, .teams-list .bc-arrow { margin-top: 0.35rem; }
+.teams-page { max-width: 64rem; margin-inline: auto; padding-bottom: 1rem; }
+.tm-jump { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 24px; }
+.tm-jump a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid rgba(244, 239, 228, 0.16);
+  border-radius: 999px;
+  color: #f4efe4;
+  font-size: 0.9rem;
+  font-weight: 650;
+  text-decoration: none;
+  transition: border-color 180ms ease, background 180ms ease;
+}
+.tm-jump a span { color: #e4c36a; font-weight: 700; }
+.tm-jump a:hover { border-color: rgba(228, 195, 106, 0.5); background: #1c1a16; }
+.tm-era { margin: 0 0 30px; scroll-margin-top: 5.5rem; }
+.tm-era-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(244, 239, 228, 0.1);
+}
+.tm-era-head h2 { margin: 0; color: #f4efe4; font-size: 1.25rem; letter-spacing: -0.02em; }
+.tm-era-head span { color: #b7ae9e; font-size: 0.875rem; }
+.tm-grid { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.tm-grid li { display: grid; }
+.tm-card {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 14px;
+  background: #161513;
+  border: 1px solid rgba(244, 239, 228, 0.12);
+  border-radius: 16px;
+  color: #f4efe4;
+  text-decoration: none;
+  transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
+}
+.tm-card:hover { border-color: rgba(228, 195, 106, 0.45); background: #1c1a16; }
+.tm-card:active { transform: translateY(1px); }
+.tm-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.tm-batch {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(228, 195, 106, 0.12);
+  color: #e4c36a;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  font-variant-numeric: tabular-nums;
+}
+.tm-arrow { color: #e4c36a; font-size: 1.15rem; line-height: 1; transition: transform 180ms ease; }
+.tm-card:hover .tm-arrow { transform: translateX(3px); }
+.tm-identity { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.tm-mono {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid rgba(228, 195, 106, 0.25);
+  border-radius: 50%;
+  background: #241e14;
+  color: #e4c36a;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.tm-identity strong { min-width: 0; overflow-wrap: anywhere; font-size: 1.05rem; line-height: 1.25; }
+.tm-officers { display: grid; gap: 8px; padding-top: 10px; border-top: 1px solid rgba(244, 239, 228, 0.08); }
+.tm-officer { display: grid; gap: 1px; color: #d9d1c3; font-size: 0.875rem; overflow-wrap: anywhere; }
+.tm-role { color: #b7ae9e; font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; }
+@media (min-width: 640px) {
+  .tm-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 960px) {
+  .tm-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .tm-card:hover { transform: translateY(-2px); }
+  .tm-card:active { transform: translateY(1px); }
+}
 .field-label .optional { margin-left: 0.35rem; color: #a89f90; font-size: 0.8rem; font-weight: 500; letter-spacing: 0; text-transform: none; }
 .team-officers { display: grid; gap: 0.35rem; margin: 0.8rem 0 0; }
 .team-officers p { margin: 0; }

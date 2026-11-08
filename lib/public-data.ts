@@ -81,7 +81,7 @@ export async function listPublicTeams(db: Queryable) {
        from public_teams t
        join registrations r on r.id = t.id
        where t.season_id = $1
-       order by t.team_name`,
+       order by t.batch_admission_year asc nulls last, t.batch_leaving_year asc nulls last, t.team_name`,
       [season.id],
     );
     return rows.map(mapPublicTeam);

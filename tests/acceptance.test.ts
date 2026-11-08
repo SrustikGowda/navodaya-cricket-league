@@ -6,7 +6,7 @@ import { upsertProfile } from "../lib/accounts";
 import { buildFixtureCalendar, shouldNotifyScheduleUpdate } from "../lib/calendar";
 import { localAuthAllowed, cricheroesSyncAvailable, demoAllowed } from "../lib/integrations";
 import { listPaymentsForRegistration, listAllPayments, submitPaymentEvidence, verifyPayment } from "../lib/payments";
-import { getPublicFixture, getPublicTeam, listPublicFixtures } from "../lib/public-data";
+import { getPublicFixture, getPublicTeam, listPublicFixtures, listPublicTeams } from "../lib/public-data";
 import {
   createDraft,
   getOwnRegistration,
@@ -180,6 +180,28 @@ test("round robin plays each pair once and does not invent a partial schedule", 
   });
   assert.equal(impossible.ok, false);
   assert.equal(impossible.fixtures.length, 0);
+});
+
+test("public team list runs from the oldest batch to the newest, not by name or sign-up order", async () => {
+  const db = await freshDb();
+  const admin = await organizer(db);
+  await openSeason(db, admin, { teamCap: 10, waitlistEnabled: false, feePaise: 0 });
+  // Submitted newest-first and named so that alphabetical order differs from batch order,
+  // including the two 2005 batches: the earlier leaving year (Zzz) must beat the earlier name (Aaa).
+  const entries: [string, number[]][] = [
+    ["Alpha", [2012, 2019]],
+    ["Aaa", [2005, 2012]],
+    ["Zzz", [2005, 2011]],
+    ["Zulu", [1998, 2005]],
+  ];
+  for (const [index, [name, batch]] of entries.entries()) {
+    const captain = await upsertProfile(db, { email: `order-${index}@ncl.test` });
+    const team = await submitTeam(db, captain, name, batch);
+    await reviewRegistration(db, admin, team.id, "approve", "");
+  }
+  clearReadCache();
+  const names = (await listPublicTeams(db)).map((team) => team.teamName);
+  assert.deepEqual(names, ["Zulu", "Zzz", "Aaa", "Alpha"]);
 });
 
 test("captains are isolated, submission is idempotent, and capacity is atomic", async () => {
