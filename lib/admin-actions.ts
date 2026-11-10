@@ -1,4 +1,5 @@
 import { getDb } from "./db";
+import { parseScoreEntry, recordMatchScore, recordTiebreak } from "./draw/results";
 import { DomainError } from "./errors";
 import { saveAnnouncement, confirmAlias, listAnnouncements, listAudit, listHeritageQueue, listMedia, listSponsors, reviewHeritage, saveSponsor, updateArchive } from "./content";
 import { recordRefund, rejectPayment, verifyPayment } from "./payments";
@@ -180,6 +181,10 @@ export async function adminAction(actor: Actor, body: Record<string, unknown>) {
     return { ok: true };
   }
   if (action === "ensure-draft") return { versionId: await ensureDraft(db, actor) };
+  if (action === "draw-score") return recordMatchScore(db, actor, String(body.fixtureId), parseScoreEntry(body));
+  if (action === "draw-tiebreak") {
+    return recordTiebreak(db, actor, { scope: String(body.scope ?? ""), order: stringList(body.order), note: String(body.note ?? "") });
+  }
   throw new DomainError("That organizer action is not available.");
 }
 

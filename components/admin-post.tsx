@@ -10,7 +10,8 @@ export function useAdminPost() {
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
 
-  async function submit(action: string, body: Record<string, unknown>) {
+  /** Resolves true when the change was saved, false when it was refused (the reason is in `error`). */
+  async function submit(action: string, body: Record<string, unknown>): Promise<boolean> {
     setPending(true);
     setError("");
     setMessage("");
@@ -18,8 +19,10 @@ export function useAdminPost() {
       const result = await postJson("/api/admin", { action, ...body });
       setMessage(describe(result));
       router.refresh();
+      return true;
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Nothing was saved.");
+      return false;
     } finally {
       setPending(false);
     }
