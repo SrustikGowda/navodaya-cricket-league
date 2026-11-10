@@ -918,6 +918,21 @@ body:has(.teams-page)::after { display: none; }
   border: 1px solid rgba(244, 239, 228, 0.12);
   border-radius: 16px;
 }
+.bc-ticket .bc-closed-banner {
+  padding: 11px 16px;
+  border-bottom: 1px solid rgba(240, 87, 75, 0.35);
+  border-radius: 16px 16px 0 0;
+  background: rgba(240, 87, 75, 0.1);
+  color: #ffb4ae;
+  font-size: 0.8125rem;
+  letter-spacing: 0.06em;
+}
+.bc-primary--closed {
+  border: 1px solid rgba(244, 239, 228, 0.35);
+  background: transparent;
+  color: #d9d1c3;
+}
+.bc-primary--closed:hover { background: rgba(244, 239, 228, 0.08); }
 .bc-ticket-cols {
   display: grid;
   grid-template-columns: 1fr 1fr;

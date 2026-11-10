@@ -6,7 +6,7 @@ import { PublicShell } from "@/components/shell";
 import { getDb } from "@/lib/db";
 import { formatEventDates, formatInrFromPaise, formatIst } from "@/lib/format";
 import { listPublicAnnouncements, listPublicFixtures, listPublicTeams } from "@/lib/public-data";
-import { getActiveSeason, toPublicSeason } from "@/lib/season";
+import { entryLabel, getActiveSeason, toPublicSeason } from "@/lib/season";
 
 export default async function SeasonHome() {
   const db = await getDb();
@@ -21,6 +21,7 @@ export default async function SeasonHome() {
   const shownTeams = teams.slice(0, 4);
   const registerLabel = season.registrationPhase === "open" ? "Register a team" : season.registrationPhase === "closed" ? "Registration is closed" : "Registration opens soon";
   const directions = httpUrl(season.mapsUrl);
+  const closed = season.registrationPhase === "closed";
   const showClose = Boolean(season.registrationClosesAt && (season.registrationAnnounced || season.registrationPhase === "closed"));
   const close = season.registrationClosesAt ? splitIst(season.registrationClosesAt) : null;
   return (
@@ -37,14 +38,15 @@ export default async function SeasonHome() {
           <p className="bc-date">{formatEventDates(season.startDate, season.endDate)}</p>
           <p className="bc-place">{season.venueName.trim()}, Bengaluru</p>
           <div className="bc-actions">
-            <Link className="bc-primary" href="/2026/register">{registerLabel}</Link>
+            <Link className={closed ? "bc-primary bc-primary--closed" : "bc-primary"} href="/2026/register">{registerLabel}</Link>
           </div>
           <p className="bc-credit">Organized by alumni batch 2005 - 2012.</p>
         </div>
       </section>
 
       <section className="bc-sheet home-reveal" aria-label="Registration">
-        <div className="bc-ticket">
+        <div className={closed ? "bc-ticket is-closed" : "bc-ticket"}>
+          {closed ? <p className="bc-closed-banner" role="status">Entry is closed. Thank you to every team that entered.</p> : null}
           <div className="bc-ticket-cols">
             <div>
               <p>Entry fee</p>
@@ -52,7 +54,7 @@ export default async function SeasonHome() {
               {season.feePaise != null && season.feePaise > 0 ? <span>per team</span> : null}
             </div>
             <div>
-              <p>Entry closes</p>
+              <p>{entryLabel(season.registrationPhase)}</p>
               {showClose && close ? (
                 <strong>
                   <span aria-hidden="true">{shortStamp(season.registrationClosesAt!)}</span>

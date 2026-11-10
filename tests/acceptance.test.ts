@@ -22,7 +22,7 @@ import {
 import { addGround, addManualFixture, publishDelay, publishSchedule, recordResult } from "../lib/schedule";
 import { findScheduleConflicts, planRoundRobin, type EngineFixture } from "../lib/schedule-engine";
 import { clearReadCache } from "../lib/read-cache";
-import { getActiveSeason, getScheduleSettings, updateSeason } from "../lib/season";
+import { entryLabel, getActiveSeason, getScheduleSettings, registrationPhase, updateSeason } from "../lib/season";
 import { publishStandings, getPublishedStandings } from "../lib/standings";
 import { adminAction } from "../lib/admin-actions";
 import type { Actor } from "../lib/types";
@@ -708,4 +708,14 @@ test("public signup cannot open the organizer desk", async () => {
 
 beforeEach(() => {
   process.env.ADMIN_EMAILS = "organizer@ncl.test";
+});
+
+test("once the entry deadline has passed the site says entry is closed, not that it closes", () => {
+  const season = { registrationOpensAt: "2026-10-06T00:30:00.000Z", registrationClosesAt: "2026-11-10T18:29:00.000Z", registrationAnnounced: true };
+  // 23:59 IST on 10 November is 18:29 UTC. A minute before is still open, the instant after is closed.
+  assert.equal(registrationPhase(season, new Date("2026-11-10T18:28:59.000Z")), "open");
+  assert.equal(entryLabel(registrationPhase(season, new Date("2026-11-10T18:28:59.000Z"))), "Entry closes");
+  assert.equal(registrationPhase(season, new Date("2026-11-10T18:29:01.000Z")), "closed");
+  assert.equal(entryLabel(registrationPhase(season, new Date("2026-11-10T18:29:01.000Z"))), "Entry closed");
+  assert.equal(entryLabel("soon"), "Entry closes");
 });
