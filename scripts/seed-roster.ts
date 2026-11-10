@@ -36,7 +36,9 @@ async function main() {
         [seasonId, owner.id, name, slugify(name), 1998 + index, 2005 + index, `${name} captain`, `sample${index}@ncl.test`, `SAMPLE-${index}`],
       );
     }
-    console.log("Added 18 sample approved teams.");
+    // A sample entry fee so "mark fee paid" can be tried locally.
+    await db.execute("update seasons set fee_paise = 400000 where year = 2026 and fee_paise is null");
+    console.log("Added 18 sample approved teams and a sample entry fee.");
   }
   await db.close();
 }

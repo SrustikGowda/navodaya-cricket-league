@@ -2,6 +2,7 @@ import { writeAudit } from "./audit";
 import type { Db, Queryable } from "./db";
 import { DomainError, isUniqueViolation } from "./errors";
 import { num, requiredStr, str, type Row } from "./rows";
+import { clearReadCache } from "./read-cache";
 import { getActiveSeason, paymentCollectionReady } from "./season";
 import type { Actor } from "./types";
 
@@ -187,4 +188,77 @@ export async function assertReceiptAccess(db: Queryable, actor: Actor, attemptId
   const owner = await db.query("select captain_user_id from registrations where id = $1", [payment.registrationId]);
   if (owner[0]?.captain_user_id !== actor.id) throw new DomainError("Receipt not found.", 404, "not_found");
   return payment;
+}
+
+/** Notes written when an organizer marks a team as paid. Only these marks can be taken back; a UPI payment needs a refund instead. */
+export const ORGANIZER_MARK = "Marked paid by organizer";
+
+export type FeeStatus = "paid" | "unpaid" | "exempt" | "none";
+
+/** Entry fee state for each approved team: paid (a verified payment), exempt (batch left in 2021 or later), none (no fee set) or unpaid. */
+export async function feeStatuses(db: Queryable, seasonId: string): Promise<Map<string, FeeStatus>> {
+  const season = await getActiveSeason(db);
+  const teams = await db.query<Row>(
+    `select r.id, r.batch_leaving_year,
+       exists (select 1 from payment_attempts p where p.registration_id = r.id and p.status = 'verified') as paid
+     from registrations r where r.season_id = $1 and r.status = 'approved'`,
+    [seasonId],
+  );
+  const out = new Map<string, FeeStatus>();
+  for (const team of teams) {
+    const leaving = num(team, "batch_leaving_year");
+    const paid = team.paid === true || team.paid === "t";
+    if (paid) out.set(requiredStr(team, "id"), "paid");
+    else if (leaving != null && leaving >= 2021) out.set(requiredStr(team, "id"), "exempt");
+    else if (season.feePaise == null || season.feePaise <= 0) out.set(requiredStr(team, "id"), "none");
+    else out.set(requiredStr(team, "id"), "unpaid");
+  }
+  return out;
+}
+
+/**
+ * Marks a team's entry fee as paid, or takes an organizer's mark back. "Paid" is a verified payment record, the same thing
+ * the payments page and the reconciliation CSV use, so there is one source of truth.
+ */
+export async function setFeePaid(db: Db, actor: Actor, registrationId: string, paid: boolean, note?: string | null): Promise<FeeStatus> {
+  if (actor.role !== "organizer") throw new DomainError("Organizer access is required.", 403, "forbidden");
+  const status = await db.tx(async (query) => {
+    const season = await getActiveSeason(query);
+    const found = await query.query<Row>("select id, team_name, status, batch_leaving_year from registrations where id = $1 and season_id = $2 for update", [registrationId, season.id]);
+    const team = found[0];
+    if (!team) throw new DomainError("Team not found.", 404, "not_found");
+    if (team.status !== "approved") throw new DomainError("Only approved teams pay the entry fee.", 422, "not_approved");
+    const verified = await query.query<Row>("select * from payment_attempts where registration_id = $1 and status = 'verified' order by created_at desc", [registrationId]);
+    if (paid) {
+      const leaving = num(team, "batch_leaving_year");
+      if (leaving != null && leaving >= 2021) throw new DomainError("No entry fee is due. Batches that passed out in 2021 or later are exempt.", 422, "exempt");
+      if (season.feePaise == null || season.feePaise <= 0) throw new DomainError("There is no entry fee set for this season.", 422, "no_fee");
+      if (verified[0]) return "paid" as const;
+      // A UPI reference the captain already sent is verified rather than duplicated.
+      const submitted = await query.query<Row>("select id from payment_attempts where registration_id = $1 and status = 'submitted' order by created_at desc limit 1", [registrationId]);
+      if (submitted[0]) {
+        await query.execute("update payment_attempts set status = 'verified', verified_by = $1, verified_at = now() where id = $2", [actor.id, requiredStr(submitted[0], "id")]);
+      } else {
+        await query.execute(
+          `insert into payment_attempts (season_id, registration_id, amount_paise, status, note, verified_by, verified_at)
+           values ($1,$2,$3,'verified',$4,$5, now())`,
+          [season.id, registrationId, season.feePaise, `${ORGANIZER_MARK}${note?.trim() ? `: ${note.trim()}` : ""}`, actor.id],
+        );
+      }
+      await writeAudit(query, actor.id, "payment.mark_paid", "registration", registrationId, { team: requiredStr(team, "team_name"), note: note?.trim() ?? null });
+      return "paid" as const;
+    }
+    if (verified.length === 0) return "unpaid" as const;
+    const withUpi = verified.filter((row) => !String(row.note ?? "").startsWith(ORGANIZER_MARK));
+    if (withUpi.length > 0) {
+      throw new DomainError("This payment came with a UPI reference. Record a refund on the payments page instead of marking it unpaid.", 409, "has_reference");
+    }
+    for (const row of verified) {
+      await query.execute("update payment_attempts set status = 'rejected', rejection_reason = $1 where id = $2", [`Mark removed by organizer${note?.trim() ? `: ${note.trim()}` : ""}`, requiredStr(row, "id")]);
+    }
+    await writeAudit(query, actor.id, "payment.unmark_paid", "registration", registrationId, { team: requiredStr(team, "team_name"), note: note?.trim() ?? null });
+    return "unpaid" as const;
+  });
+  clearReadCache();
+  return status;
 }

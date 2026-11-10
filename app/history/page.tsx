@@ -9,12 +9,10 @@ import { toHallEdition } from "@/lib/hall";
 
 export const metadata = { title: "Hall of Champions" };
 
-const KEPT = new Set([12, 13, 14]);
-
 export default async function HistoryPage({ searchParams }: { searchParams: Promise<{ year?: string }> }) {
   const params = await searchParams;
   const editions = (await listArchive(await getDb()))
-    .filter((entry) => KEPT.has(entry.editionNumber) && entry.year != null)
+    .filter((entry) => entry.editionNumber >= 12 && entry.year != null)
     .map(toHallEdition)
     .sort((a, b) => b.year - a.year);
   const requested = Number(params.year);

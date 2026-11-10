@@ -1,8 +1,10 @@
 import { getDb } from "./db";
+import { saveAwards } from "./draw/history";
+import { setKnockoutMatch } from "./draw/knockouts";
 import { parseScoreEntry, recordMatchScore, recordTiebreak } from "./draw/results";
 import { DomainError } from "./errors";
 import { saveAnnouncement, confirmAlias, listAnnouncements, listAudit, listHeritageQueue, listMedia, listSponsors, reviewHeritage, saveSponsor, updateArchive } from "./content";
-import { recordRefund, rejectPayment, verifyPayment } from "./payments";
+import { recordRefund, rejectPayment, setFeePaid, verifyPayment } from "./payments";
 import { listRegistrations, overrideSquad, publishSquadChanges, removeRegistration, reviewRegistration } from "./registration";
 import {
   addGround,
@@ -66,6 +68,7 @@ export async function adminAction(actor: Actor, body: Record<string, unknown>) {
   if (action === "override-squad") {
     return { registration: await overrideSquad(db, actor, String(body.id), players(body.players), String(body.reason ?? "")) };
   }
+  if (action === "fee-paid") return { status: await setFeePaid(db, actor, String(body.registrationId), body.paid === true, typeof body.note === "string" ? body.note : null) };
   if (action === "verify-payment") return { payment: await verifyPayment(db, actor, String(body.attemptId)) };
   if (action === "reject-payment") return { payment: await rejectPayment(db, actor, String(body.attemptId), String(body.reason ?? "")) };
   if (action === "refund") {
@@ -182,6 +185,16 @@ export async function adminAction(actor: Actor, body: Record<string, unknown>) {
   }
   if (action === "ensure-draft") return { versionId: await ensureDraft(db, actor) };
   if (action === "draw-score") return recordMatchScore(db, actor, String(body.fixtureId), parseScoreEntry(body));
+  if (action === "draw-knockout") {
+    const side = (value: unknown) => (typeof value === "string" && value ? value : null);
+    return setKnockoutMatch(db, actor, String(body.fixtureId), {
+      teamAId: side(body.teamAId),
+      teamBId: side(body.teamBId),
+      winner: body.winner === "a" || body.winner === "b" ? body.winner : null,
+      summary: typeof body.summary === "string" ? body.summary : null,
+    });
+  }
+  if (action === "save-awards") return { awards: await saveAwards(db, actor, body.awards) };
   if (action === "draw-tiebreak") {
     return recordTiebreak(db, actor, { scope: String(body.scope ?? ""), order: stringList(body.order), note: String(body.note ?? "") });
   }

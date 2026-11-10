@@ -45,6 +45,7 @@ export default async function TeamsPage() {
                       <Link className="tm-card" href={`/2026/teams/${team.slug}`}>
                         <span className="tm-top">
                           <span className="tm-batch">{batchLabel(team)}</span>
+                          {team.feePaid ? <span className="tm-paid">Fee paid</span> : null}
                           <span className="tm-arrow" aria-hidden="true">→</span>
                         </span>
                         <span className="tm-identity">

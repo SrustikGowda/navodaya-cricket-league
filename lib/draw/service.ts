@@ -8,12 +8,13 @@ import { bool, num, requiredStr, str, type Row } from "../rows";
 import { getActiveSeason, lockActiveSeason, type Season } from "../season";
 import type { Actor } from "../types";
 import { ALGORITHM, GROUND_NAMES, REVEAL_LEAD_MS } from "./config";
+import { syncEditionHistory } from "./history";
 import { generatePlan, planHash } from "./plan";
 import { resolveSeeds, type RosterTeam } from "./seeds";
 import { computeQualification, oversText, type MatchScore, type OrganizerDecision, type Qualification } from "./standings";
 import type { DrawPlan, GroupCode, LiveFixture, OfficialDrawView, PublicTeam } from "./types";
 
-export const RESET_PHRASE = "RESET NCL 2026 DRAW";
+export const RESET_PHRASE = "DELETE NCL 2026 DRAW";
 const PASSWORD_ENV = "NCL_FIXTURE_RUN_PASSWORD";
 
 // ---------------------------------------------------------------------------------------------
@@ -426,38 +427,56 @@ export async function runOfficialDraw(
 }
 
 // ---------------------------------------------------------------------------------------------
-// Organizer reset: explicit, audited, and never destructive
+// Deleting the official run (admin only), so the Real Run can be done again. Never destructive: the old draw, its
+// fixtures and any scores stay in the database as an archived record.
 // ---------------------------------------------------------------------------------------------
 
-export async function resetOfficialDraw(db: Db, actor: Actor, input: { reason: string; confirmation: string }): Promise<{ ref: string }> {
-  if (actor.role !== "organizer") throw new DomainError("Organizer access is required.", 403, "forbidden");
+/** What deleting the current official run would take out of public view. */
+export async function drawResultCounts(db: Queryable, drawId: string): Promise<{ started: number; scores: number }> {
+  const rows = await db.query<{ started: number; scores: number }>(
+    `select
+       (select count(*) from fixtures where draw_id = $1 and status in ('in_progress','completed','abandoned'))::int as started,
+       (select count(*) from match_scores ms join fixtures f on f.id = ms.fixture_id where f.draw_id = $1)::int as scores`,
+    [drawId],
+  );
+  return rows[0] ?? { started: 0, scores: 0 };
+}
+
+export async function resetOfficialDraw(
+  db: Db,
+  actor: Actor,
+  input: { reason: string; confirmation: string; acknowledgeResults?: boolean },
+): Promise<{ ref: string; archivedResults: number }> {
+  if (actor.role !== "organizer") throw new DomainError("Only an admin can delete the official run.", 403, "forbidden");
   if (input.confirmation.trim() !== RESET_PHRASE) throw new DomainError(`Type ${RESET_PHRASE} exactly to confirm.`, 422, "confirmation");
   const reason = input.reason.trim();
   if (reason.length < 10) throw new DomainError("Give a reason of at least 10 characters. It is kept in the audit log.", 422, "reason");
-  const ref = await db.tx(async (query) => {
+  const outcome = await db.tx(async (query) => {
     const season = await lockActiveSeason(query);
     const rows = await query.query<Row>("select * from draws where season_id = $1 and status = 'published' for update", [season.id]);
     const draw = rows[0];
-    if (!draw) throw new DomainError("There is no official draw to reset.", 404, "no_draw");
+    if (!draw) throw new DomainError("There is no official run to delete.", 404, "no_draw");
     const drawId = requiredStr(draw, "id");
-    const used = await query.query<{ n: number }>(
-      `select (
-         (select count(*) from fixtures where draw_id = $1 and status in ('in_progress','completed','abandoned'))
-         + (select count(*) from match_scores ms join fixtures f on f.id = ms.fixture_id where f.draw_id = $1)
-       )::int as n`,
-      [drawId],
-    );
-    if ((used[0]?.n ?? 0) > 0) {
-      throw new DomainError("Matches have started or have results. The draw can no longer be reset. Nothing was changed.", 409, "draw_in_use");
+    const counts = await drawResultCounts(query, drawId);
+    const archivedResults = Math.max(counts.started, counts.scores);
+    if (archivedResults > 0 && !input.acknowledgeResults) {
+      throw new DomainError(
+        `${archivedResults} ${archivedResults === 1 ? "match has" : "matches have"} a result. Deleting the run takes them off the site (they stay in the database). Tick the box to confirm. Nothing was changed.`,
+        409,
+        "results_exist",
+        { results: archivedResults },
+      );
     }
     const drawRef = requiredStr(draw, "ref");
     await query.execute("update draws set status = 'reset', reset_by = $1, reset_at = now(), reset_reason = $2 where id = $3", [actor.id, reason, drawId]);
     if (draw.schedule_version_id) await query.execute("update schedule_versions set status = 'archived' where id = $1", [draw.schedule_version_id]);
     // Keep the old groups and memberships as a record; free their names for the next draw.
-    await query.execute("update groups set name = name || ' (reset ' || $2 || ')', code = null where draw_id = $1", [drawId, drawRef]);
-    await writeAudit(query, actor.id, "draw.reset", "draw", drawId, { ref: drawRef, reason, planHash: str(draw, "plan_hash") });
-    return drawRef;
+    await query.execute("update groups set name = name || ' (deleted ' || $2 || ')', code = null where draw_id = $1", [drawId, drawRef]);
+    await writeAudit(query, actor.id, "draw.reset", "draw", drawId, { ref: drawRef, reason, planHash: str(draw, "plan_hash"), archivedResults });
+    // The edition's History entry came from this run, so it goes with it.
+    await syncEditionHistory(query);
+    return { ref: drawRef, archivedResults };
   });
   clearReadCache();
-  return { ref };
+  return outcome;
 }

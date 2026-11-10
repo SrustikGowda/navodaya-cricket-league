@@ -85,8 +85,9 @@ export function HallOfChampions({ editions, year }: { editions: HallEdition[]; y
           <StatCard title="Most wickets" item={selected.standouts.wickets} />
           {selected.standouts.mvp ? (
             <article>
-              <p>MVP leaderboard</p>
+              <p>{selected.standouts.mvp.rank === 1 ? "MVP leaderboard" : "Most valuable player"}</p>
               <h3>{selected.standouts.mvp.name}</h3>
+              {selected.standouts.mvp.team ? <span>{selected.standouts.mvp.team}</span> : null}
               {selected.standouts.mvp.rank === 1 ? <span className="hall-rank">Rank #1</span> : null}
               {selected.standouts.mvp.note ? <details><summary>Source note</summary><p>{selected.standouts.mvp.note}</p></details> : null}
             </article>
@@ -114,7 +115,9 @@ export function HallOfChampions({ editions, year }: { editions: HallEdition[]; y
               </div>
             ))}
           </dl>
-          {selected.sourceUrl ? <p><a href={selected.sourceUrl}>Records on CricHeroes ↗</a></p> : null}
+          {selected.sourceUrl ? (
+            selected.sourceUrl.startsWith("/") ? <p><Link href={selected.sourceUrl}>Full fixtures and results →</Link></p> : <p><a href={selected.sourceUrl}>Records on CricHeroes ↗</a></p>
+          ) : null}
         </section>
       </div>
     </div>

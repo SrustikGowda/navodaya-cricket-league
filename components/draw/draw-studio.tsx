@@ -267,6 +267,11 @@ export function DrawStudio({
             <span className="dr-status-ref">{official.ref}</span>
             <span className="dr-status-when">Published {formatIst(official.publishedAt)}</span>
           </p>
+          {isOrganizer ? (
+            <a className="dr-status-admin" href="/admin/settings#official-run">
+              Redo? Delete this run in Settings
+            </a>
+          ) : null}
           <button type="button" className="dr-btn dr-btn--ghost dr-btn--sm" onClick={replay}>
             <svg viewBox="0 0 16 16" aria-hidden="true" className="dr-play">
               <path d="M5 3.5v9l7-4.5z" />

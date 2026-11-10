@@ -7,6 +7,8 @@ import { num, requiredStr, str, type Row } from "../rows";
 import { lockActiveSeason } from "../season";
 import type { Actor } from "../types";
 import { pairQuarterfinals } from "./bracket";
+import { syncEditionHistory } from "./history";
+import { advanceWinner } from "./knockouts";
 import { loadDecisions, loadLeagueScores, qualificationFor, getOfficialDraw } from "./service";
 import { matchWinner, oversText, validateScore, type Innings, type MatchOutcome, type MatchScore } from "./standings";
 import type { DrawPlan, OfficialDrawView } from "./types";
@@ -114,21 +116,15 @@ export async function recordMatchScore(db: Db, actor: Actor, fixtureId: string, 
     if (noResult) await query.execute("update fixtures set status = 'abandoned' where id = $1", [fixtureId]);
 
     // A knockout winner moves into the next match when that slot is still a placeholder.
-    if (winnerId) {
-      const dependents = await query.query<Row>("select fixture_id, team_slot from fixture_dependencies where depends_on_fixture_id = $1 and slot = 'winner'", [fixtureId]);
-      for (const dependent of dependents) {
-        const column = dependent.team_slot === "a" ? "a" : "b";
-        await query.execute(
-          `update fixtures set team_${column}_registration_id = $1, team_${column}_label = $2, updated_at = now(), version = version + 1
-           where id = $3 and team_${column}_registration_id is null`,
-          [winnerId, winnerLabel, requiredStr(dependent, "fixture_id")],
-        );
-      }
+    if (str(fixture, "stage") !== "league") {
+      await advanceWinner(query, fixtureId, requiredStr(fixture, "code"), str(fixture, "winner_registration_id"), winnerId, winnerLabel);
     }
 
     await writeAudit(query, actor.id, "draw.score", "fixture", fixtureId, { outcome: entry.outcome, winner: winnerLabel });
     const drawId = requiredStr(fixture, "draw_id");
     const bracketResolved = str(fixture, "stage") === "league" ? await resolveBracketTx(query, actor, drawId) : false;
+    // The final's score, the semifinals and the champion all feed the edition's History entry.
+    await syncEditionHistory(query);
     return { bracketResolved };
   });
   clearReadCache();
