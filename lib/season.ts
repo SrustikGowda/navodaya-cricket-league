@@ -185,6 +185,11 @@ export function registrationPhase(season: Pick<Season, "registrationOpensAt" | "
   return "open" as const;
 }
 
+/** Wording for the entry deadline: once it has passed, say so instead of "closes". */
+export function entryLabel(phase: ReturnType<typeof registrationPhase>): string {
+  return phase === "closed" ? "Entry closed" : "Entry closes";
+}
+
 export function registrationAvailability(season: Season) {
   const phase = registrationPhase(season);
   const readiness = registrationReadiness(season);

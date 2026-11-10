@@ -57,7 +57,18 @@ export default async function RegisterPage() {
           <section className="register-closed">
             <h1 className="register-title">{availability.label}</h1>
             <p>{when}</p>
-            <p>Team registration details will be announced here.</p>
+            {phase === "closed" ? (
+              <>
+                <p>
+                  Entry closed{season.registrationClosesAt ? ` on ${formatIst(season.registrationClosesAt)}` : ""}. Thank you to every team that entered.
+                </p>
+                <p>
+                  <Link href="/2026/teams">See the teams</Link> · <Link href="/2026/fixtures">Fixtures and the draw</Link>
+                </p>
+              </>
+            ) : (
+              <p>Team registration details will be announced here.</p>
+            )}
             {open && !readiness.ok ? (
               actor?.role === "organizer" ? (
                 <p className="note" role="status">{readiness.message}</p>
