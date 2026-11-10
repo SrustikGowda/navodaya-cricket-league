@@ -15,7 +15,7 @@ import { getActiveSeason } from "@/lib/season";
 
 export const metadata = {
   title: "Fixtures",
-  description: "NCL 2026 tournament format, the live group draw, the full Saturday and Sunday schedule, bracket and standings.",
+  description: "NCL 2026 fixtures: the live group draw, the Saturday and Sunday schedule, the knockout bracket and standings.",
 };
 
 type Search = { day?: string; team?: string; stage?: string; ground?: string; tab?: string; group?: string };
@@ -33,24 +33,9 @@ export default async function FixturesPage({ searchParams }: { searchParams: Pro
     <PublicShell>
       <div className="dr-page">
         <header className="dr-hero">
-          <div>
-            <p className="kicker">2026</p>
-            <h1>Fixtures</h1>
-            <p className="dr-hero-sub">Format, live draw, schedule and bracket for NCL 2026.</p>
-          </div>
-          {board.official ? (
-            <a className="dr-hero-chip" href="#schedule">
-              <i aria-hidden="true" /> Official draw published · see the fixtures
-            </a>
-          ) : null}
+          <p className="kicker">NCL 2026 · 28–29 November</p>
+          <h1>Fixtures</h1>
         </header>
-        <nav className="dr-jump" aria-label="On this page">
-          <a href="#format">Format</a>
-          <a href="#draw">Live draw</a>
-          <a href="#schedule">Fixtures</a>
-        </nav>
-
-        <FormatImage />
 
         <DrawStudio
           initialBoard={board}
@@ -58,10 +43,11 @@ export default async function FixturesPage({ searchParams }: { searchParams: Pro
           passwordConfigured={drawPasswordConfigured()}
           readiness={{ ready: readiness.ready, message: readiness.message }}
           initial={{ tab: params.tab, team: params.team, day: params.day, stage: params.stage, ground: params.ground, group: params.group }}
+          about={<FormatImage />}
         >
           {manual.length > 0 ? (
             <div className="dr-manual">
-              <p className="dr-note">These fixtures were published by the organizers directly.</p>
+              <p>These fixtures were published by the organizers directly.</p>
               <div className="schedule-list fixture-list" style={{ display: "grid" }}>
                 {manual.map((fixture) => (
                   <article className="fixture" key={fixture.id}>
@@ -84,14 +70,12 @@ export default async function FixturesPage({ searchParams }: { searchParams: Pro
               </div>
             </div>
           ) : (
-            <div className="dr-pending">
-              <p>
-                {season.fixturesOn
-                  ? `Who plays whom will be published on ${formatIst(`${season.fixturesOn}T00:00:00+05:30`, false)}, when the groups are drawn live.`
-                  : "The 2026 schedule has not been published."}
-              </p>
-              <p>Groups and the full Saturday–Sunday schedule appear here for everyone at the same moment the official draw is run.</p>
-            </div>
+            <p>
+              {season.fixturesOn
+                ? `Who plays whom will be published on ${formatIst(`${season.fixturesOn}T00:00:00+05:30`, false)}, when the groups are drawn live.`
+                : "The 2026 schedule has not been published."}{" "}
+              It appears here for everyone the moment the official draw is run.
+            </p>
           )}
         </DrawStudio>
       </div>

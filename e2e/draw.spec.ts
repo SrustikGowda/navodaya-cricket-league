@@ -51,7 +51,7 @@ test("a trial run plays the whole draw, is marked as unofficial, repeats, and wr
   await expect(page.getByText("TRIAL / DEMO — NOT OFFICIAL.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Back to format" })).toBeVisible();
-  await page.getByRole("tab", { name: "All matches" }).click();
+  await page.getByRole("button", { name: "Both days" }).click();
   await expect(page.locator(".dr-views--trial .dr-match")).toHaveCount(34);
   await noOverflow(page);
 
@@ -106,18 +106,19 @@ test("the real run needs an organizer, the right password and a confirmation", a
   await expect(stage.getByText("OFFICIAL FIXTURES GENERATED", { exact: true })).toBeVisible();
   await stage.getByRole("button", { name: "View fixtures" }).click();
 
-  const banner = page.locator(".dr-banner--official");
-  await expect(banner).toContainText(/NCL26-[A-Z2-9]{6}/);
-  const ref = (await banner.locator("b").first().innerText()).trim();
-  await expect(page.getByRole("button", { name: "REAL RUN · done" })).toBeDisabled();
+  const status = page.locator(".dr-status");
+  await expect(status).toContainText(/NCL26-[A-Z2-9]{6}/);
+  const ref = (await status.locator(".dr-status-ref").innerText()).trim();
+  // Once published there is no Real Run button at all, only the status and a replay.
+  await expect(page.getByRole("button", { name: "REAL RUN" })).toHaveCount(0);
 
   // The opening match: defending champion, Saturday 7:30 AM, Ground A.
-  await page.getByRole("tab", { name: "Saturday" }).click();
+  await expect(page.getByRole("tab", { name: "Schedule" })).toHaveAttribute("aria-selected", "true");
   const opener = page.locator('.dr-match[data-code="M01"]');
-  await expect(opener).toContainText("7:30 AM");
-  await expect(opener).toContainText("Ground A");
+  await expect(opener).toHaveAttribute("aria-label", /Saturday 7:30 AM, Ground A/);
   await expect(opener).toContainText("4s-11");
-  await page.getByRole("tab", { name: "All matches" }).click();
+  await expect(page.locator(".dr-row", { has: opener })).toContainText("7:30 AM");
+  await page.getByRole("button", { name: "Both days" }).click();
   await expect(page.locator(".dr-views--trial")).toHaveCount(0);
   await expect(page.locator(".dr-match")).toHaveCount(34);
 
@@ -131,21 +132,21 @@ test("the real run needs an organizer, the right password and a confirmation", a
   await page.waitForTimeout(800);
   const rejoined = page.getByRole("dialog", { name: /official group draw/i });
   if (await rejoined.isVisible()) await rejoined.getByRole("button", { name: "Close" }).click();
-  await expect(page.locator(".dr-banner--official")).toContainText(ref);
+  await expect(page.locator(".dr-status")).toContainText(ref);
   const fresh = await browser.newContext();
   const visitor = await fresh.newPage();
   await visitor.goto("http://127.0.0.1:3458/2026/fixtures");
   // Opened after the live window, so the reveal is not forced on a late visitor.
-  await expect(visitor.locator(".dr-banner--official, .dr-stage").first()).toBeVisible({ timeout: 30_000 });
+  await expect(visitor.locator(".dr-status, .dr-stage").first()).toBeVisible({ timeout: 30_000 });
 
-  await page.getByRole("button", { name: "Replay reveal" }).first().click();
+  await page.getByRole("button", { name: "Replay the draw" }).click();
   const replay = page.getByRole("dialog", { name: /official group draw/i });
   await expect(replay).toBeVisible();
   await replay.getByRole("button", { name: "Skip animation" }).click();
   await expect(replay.getByText("OFFICIAL DRAW · REPLAY", { exact: true })).toBeVisible();
   await replay.getByRole("button", { name: "View fixtures" }).click();
   expect(writes).toEqual([]);
-  await expect(page.locator(".dr-banner--official")).toContainText(ref);
+  await expect(page.locator(".dr-status")).toContainText(ref);
 
   // The API refuses another draw, whoever asks.
   const again = await page.request.post("/api/draw/real", { data: { password: DRAW_PASSWORD, requestId: "second-attempt-0001" } });
@@ -153,7 +154,7 @@ test("the real run needs an organizer, the right password and a confirmation", a
   expect((await (await page.request.get("/api/draw/official")).json()).official.ref).toBe(ref);
 
   // Tapping a team shows its three matches, and the address is shareable.
-  await page.getByRole("tab", { name: "By team" }).click();
+  await page.getByRole("tab", { name: "Teams" }).click();
   await expect(page.locator(".dr-team .dr-match")).toHaveCount(3);
   await expect(page.getByRole("link", { name: "Share on WhatsApp" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Share image" })).toBeVisible();

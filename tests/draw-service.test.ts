@@ -9,6 +9,7 @@ import { parseScoreEntry, recordMatchScore, recordTiebreak } from "../lib/draw/r
 import {
   authorizeDrawPassword,
   getOfficialDraw,
+  liveFixtures,
   loadQualification,
   previewTrial,
   resetOfficialDraw,
@@ -349,6 +350,12 @@ test("league results flow into group tables, the quarterfinals fill themselves, 
     const out = await recordMatchScore(db, admin, fixture.id, parseScoreEntry(scoreFor(index)));
     assert.equal(out.bracketResolved, false);
   }
+  // Match cards show each side's innings, from the batting order the organizer entered.
+  const firstCard = (await liveFixtures(db, draw.id)).find((f) => f.id === league[0]?.id);
+  assert.equal(firstCard?.scoreA, "38/3 (6.0)");
+  assert.equal(firstCard?.scoreB, "20/6 (6.0)");
+  assert.equal((await liveFixtures(db, draw.id)).find((f) => f.code === "QF1")?.scoreA, null);
+
   const midway = await loadQualification(db, draw);
   assert.equal(midway.leagueMatchesPlayed, 26);
   assert.equal(midway.qualifiers, null);

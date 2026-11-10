@@ -303,8 +303,11 @@ function Boards({
           </h3>
           <div className="dr-board-pools">
             {([1, 2] as const).map((pool) => (
-              <ul key={pool} aria-label={`Sub-pool ${pool}`}>
-                <li className="dr-pool-name">Sub-pool {pool}</li>
+              <ul key={pool} aria-label={`Sub-pool ${group}${pool}`}>
+                <li className="dr-pool-name">
+                  Sub-pool {group}
+                  {pool}
+                </li>
                 {[1, 2, 3].map((n) => {
                   const slot = pool === 1 ? n : n + 3;
                   const code = `${group}${slot}`;
@@ -398,7 +401,8 @@ function FlyCard({
       <TeamMark name={name} logoUrl={logos.get(step.teamId)} size={64} />
       <b className="dr-fly-name">{name}</b>
       <span className="dr-fly-dest" style={{ animationDelay: `${Math.round(beat.revealMs * 0.55)}ms` }}>
-        Group {step.group} · Sub-pool {step.subPool}
+        Group {step.group} · Sub-pool {step.group}
+        {step.subPool}
       </span>
     </div>
   );
@@ -426,8 +430,8 @@ function FixtureCreation({ group, plan, names, matches, reduced }: { group: Grou
       </div>
       <div className="dr-fixcreate-pool">
         <div className="dr-pool-cols" aria-hidden="true">
-          <span>Sub-pool 1</span>
-          <span>Sub-pool 2</span>
+          <span>Sub-pool {group}1</span>
+          <span>Sub-pool {group}2</span>
         </div>
         <PoolDiagram group={group} names={labelBySlot} seeds={seedBySlot} drawLines={!reduced} opener={opener ? [opener.a.slot as string, opener.b.slot as string] : undefined} />
       </div>

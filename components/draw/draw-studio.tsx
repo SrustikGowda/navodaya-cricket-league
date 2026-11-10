@@ -20,6 +20,7 @@ export function DrawStudio({
   passwordConfigured,
   readiness,
   initial,
+  about,
   children,
 }: {
   initialBoard: DrawBoard;
@@ -27,7 +28,9 @@ export function DrawStudio({
   passwordConfigured: boolean;
   readiness: { ready: boolean; message: string | null };
   initial: InitialView;
-  /** Shown in the schedule section when nothing has been drawn and no manual schedule is published. */
+  /** The "how it works" block (server-rendered). Placed by state: after the draw buttons before the draw, after the fixtures once published. */
+  about: React.ReactNode;
+  /** Shown under the draw buttons before the official draw: the not-yet-published note, or a schedule published by hand. */
   children?: React.ReactNode;
 }) {
   const reduced = usePrefersReducedMotion();
@@ -193,117 +196,148 @@ export function DrawStudio({
     window.requestAnimationFrame(() => document.getElementById("format")?.scrollIntoView({ behavior: "smooth", block: "start" }));
   }
 
-  return (
+  const messages = (
     <>
-      <section className="dr-section dr-draw" id="draw" aria-labelledby="dr-draw-title">
-        <header className="dr-section-head">
-          <p className="dr-eyebrow">Live tournament draw</p>
-          <h2 id="dr-draw-title">{official ? "The official draw is in." : "Run the draw in front of everyone."}</h2>
-          <p className="dr-lead">
-            {official
-              ? "These groups and fixtures are final and visible to everyone. You can replay how they were revealed; replaying never changes the result."
-              : "The four 2025 semifinalists are seeded first, then the other 14 teams are drawn at random. Practise as often as you like with a trial run."}
-          </p>
-        </header>
+      {!readiness.ready && !official ? (
+        <p className="dr-alert" role="alert">
+          {readiness.message}
+        </p>
+      ) : null}
+      {notice ? (
+        <p className="dr-note" role="status">
+          {notice}
+        </p>
+      ) : null}
+      {error ? (
+        <p className="dr-alert" role="alert">
+          {error}
+        </p>
+      ) : null}
+    </>
+  );
 
-        {!readiness.ready && !official ? (
-          <p className="dr-alert" role="alert">
-            {readiness.message}
+  const trialPanel =
+    trial && !stage ? (
+      <section className="dr-trial" id="dr-trial" aria-label="Trial draw result">
+        <div className="dr-trial-bar" role="status">
+          <span className="dr-tag dr-tag--trial">Trial</span>
+          <p>
+            <b>TRIAL / DEMO — NOT OFFICIAL.</b> A practice draw from the real teams. Nothing here is saved or published.
           </p>
-        ) : null}
-        {notice ? (
-          <p className="dr-note" role="status">
-            {notice}
-          </p>
-        ) : null}
-        {error ? (
-          <p className="dr-alert" role="alert">
-            {error}
-          </p>
-        ) : null}
-
-        <div className="dr-draw-grid">
-          <div className="dr-draw-card">
-            <h3>Trial run</h3>
-            <p>A full practice draw with the real approved teams. Open to everyone. Nothing is saved or published.</p>
-            <button type="button" className="dr-btn dr-btn--ghost dr-btn--xl" onClick={startTrial} disabled={busy || !readiness.ready}>
-              {busy ? "Preparing…" : "TRIAL RUN"}
+          <div className="dr-trial-actions">
+            <button type="button" className="dr-btn dr-btn--gold dr-btn--sm" onClick={startTrial} disabled={busy}>
+              Try again
+            </button>
+            <button
+              type="button"
+              className="dr-btn dr-btn--ghost dr-btn--sm"
+              onClick={() => {
+                counter.current += 1;
+                setStage({ mode: "trial", plan: trial, revealAt: Date.now(), countdown: false, drawRef: null, key: counter.current });
+              }}
+            >
+              Replay this trial
+            </button>
+            <button type="button" className="dr-btn dr-btn--ghost dr-btn--sm" onClick={backToFormat}>
+              Back to format
             </button>
           </div>
-          <div className={official ? "dr-draw-card dr-draw-card--done" : "dr-draw-card dr-draw-card--real"}>
-            <h3>Real run</h3>
-            {official ? (
-              <>
-                <p>
-                  Published as <b>{official.ref}</b> on {formatIst(official.publishedAt)}. It cannot be run again without an organizer-authorized reset.
-                </p>
-                <div className="dr-card-actions">
-                  <button type="button" className="dr-btn dr-btn--gold dr-btn--xl" onClick={replay}>
-                    Replay reveal
-                  </button>
-                  <button type="button" className="dr-btn dr-btn--ghost dr-btn--xl" disabled aria-disabled="true">
-                    REAL RUN · done
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <p>Organizers only. Needs the draw password and a final confirmation. The official draw can be run once.</p>
-                <button type="button" className="dr-btn dr-btn--gold dr-btn--xl" onClick={() => setModal(true)} disabled={!readiness.ready}>
-                  REAL RUN
-                </button>
-              </>
-            )}
-          </div>
         </div>
-
-        {trial && !stage ? (
-          <div className="dr-trial-wrap" id="dr-trial">
-            <div className="dr-trial-actions">
-              <button type="button" className="dr-btn dr-btn--gold" onClick={startTrial} disabled={busy}>
-                Try again
-              </button>
-              <button
-                type="button"
-                className="dr-btn dr-btn--ghost"
-                onClick={() => {
-                  counter.current += 1;
-                  setStage({ mode: "trial", plan: trial, revealAt: Date.now(), countdown: false, drawRef: null, key: counter.current });
-                }}
-              >
-                Replay this trial
-              </button>
-              <button type="button" className="dr-btn dr-btn--ghost" onClick={backToFormat}>
-                Back to format
-              </button>
-            </div>
-            <ScheduleViews kind="trial" plan={trial} teams={board.teams} />
-          </div>
-        ) : null}
+        <ScheduleViews kind="trial" plan={trial} teams={board.teams} />
       </section>
+    ) : null;
 
-      <section className="dr-section dr-schedule" id="schedule" aria-labelledby="dr-schedule-title">
-        <header className="dr-section-head">
-          <p className="dr-eyebrow">{official ? "Official fixtures" : "Fixtures"}</p>
-          <h2 id="dr-schedule-title">{official ? "Groups, schedule and bracket" : "The schedule will appear here"}</h2>
-        </header>
-        {official ? (
-          <ScheduleViews kind="official" plan={official.plan} fixtures={board.fixtures} qualification={board.qualification} teams={board.teams} drawRef={official.ref} publishedAt={official.publishedAt} initial={initial} onReplay={replay} />
-        ) : (
-          children ?? (
-            <div className="dr-pending">
-              <p>
-                Groups and the full Saturday–Sunday schedule are generated live in front of the teams, then published here for everyone at the same moment.
-              </p>
-            </div>
-          )
-        )}
-      </section>
-
+  const overlays = (
+    <>
       {stage ? (
         <DrawStage key={stage.key} plan={stage.plan} mode={stage.mode} teams={board.teams} drawRef={stage.drawRef} revealAt={stage.revealAt} countdown={stage.countdown} onClose={closeStage} onAgain={stage.mode === "trial" ? () => void startTrial() : undefined} />
       ) : null}
       {modal ? <RealRunModal isOrganizer={isOrganizer} passwordConfigured={passwordConfigured} onClose={() => setModal(false)} onPublished={onPublished} onAlreadyPublished={() => void onAlreadyPublished()} /> : null}
+    </>
+  );
+
+  // After the official draw, the page is about finding matches: status line, fixtures, then the format and a practice draw.
+  if (official) {
+    return (
+      <>
+        <div className="dr-status" role="status">
+          <span className="dr-status-dot" aria-hidden="true" />
+          <p>
+            <b>Official draw</b>
+            <span className="dr-status-ref">{official.ref}</span>
+            <span className="dr-status-when">Published {formatIst(official.publishedAt)}</span>
+          </p>
+          <button type="button" className="dr-btn dr-btn--ghost dr-btn--sm" onClick={replay}>
+            <svg viewBox="0 0 16 16" aria-hidden="true" className="dr-play">
+              <path d="M5 3.5v9l7-4.5z" />
+            </svg>
+            Replay the draw
+          </button>
+        </div>
+        {messages}
+        <section className="dr-fixtures" id="schedule" aria-label="Official fixtures">
+          <ScheduleViews kind="official" plan={official.plan} fixtures={board.fixtures} qualification={board.qualification} teams={board.teams} drawRef={official.ref} initial={initial} />
+        </section>
+        <section className="dr-about dr-about--compact" id="format" aria-labelledby="dr-format-title">
+          {about}
+        </section>
+        <section className="dr-practice" id="draw" aria-labelledby="dr-practice-title">
+          <div>
+            <h2 id="dr-practice-title">Practice draw</h2>
+            <p>Run the same draw yourself with the real teams. Nothing is saved or published.</p>
+          </div>
+          <button type="button" className="dr-btn dr-btn--ghost" onClick={startTrial} disabled={busy}>
+            {busy ? "Preparing…" : "TRIAL RUN"}
+          </button>
+        </section>
+        {trialPanel}
+        {overlays}
+      </>
+    );
+  }
+
+  // Before the official draw, the page is about the draw itself.
+  return (
+    <>
+      <section className="dr-drawhero" id="draw" aria-labelledby="dr-draw-title">
+        <p className="dr-eyebrow">The group draw</p>
+        <h2 id="dr-draw-title">Drawn live, in front of every team</h2>
+        <ol className="dr-steps">
+          <li>
+            <b>4</b>
+            <span>seeded first: the 2025 semifinalists</span>
+          </li>
+          <li>
+            <b>14</b>
+            <span>drawn at random into the open places</span>
+          </li>
+          <li>
+            <b>34</b>
+            <span>fixtures and the two-day schedule, made at once</span>
+          </li>
+        </ol>
+        {messages}
+        <div className="dr-draw-actions">
+          <div>
+            <button type="button" className="dr-btn dr-btn--ghost dr-btn--xl" onClick={startTrial} disabled={busy || !readiness.ready}>
+              {busy ? "Preparing…" : "TRIAL RUN"}
+            </button>
+            <small>Practice · nothing is saved</small>
+          </div>
+          <div>
+            <button type="button" className="dr-btn dr-btn--gold dr-btn--xl" onClick={() => setModal(true)} disabled={!readiness.ready}>
+              REAL RUN
+            </button>
+            <small>Organizers only · runs once</small>
+          </div>
+        </div>
+        {children ? <div className="dr-draw-foot">{children}</div> : null}
+      </section>
+      {trialPanel}
+      <section className="dr-about" id="format" aria-labelledby="dr-format-title">
+        {about}
+      </section>
+      {overlays}
     </>
   );
 }

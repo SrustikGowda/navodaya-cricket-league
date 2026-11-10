@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { formatIst } from "@/lib/format";
 import { renderShareCard } from "@/lib/draw/share-image";
 import type { Qualification } from "@/lib/draw/standings";
 import type { DrawPlan, GroupCode, LiveFixture, PublicTeam } from "@/lib/draw/types";
@@ -23,37 +22,39 @@ import { MatchCard } from "./match-card";
 import { StandingsBoard } from "./standings-board";
 import { TeamMark } from "./team-mark";
 
-type TabId = "all" | "saturday" | "sunday" | "groups" | "teams" | "bracket" | "standings";
+type TabId = "schedule" | "groups" | "teams" | "bracket" | "standings";
+type DayChoice = "1" | "2" | "both";
 
 export type InitialView = { tab?: string; team?: string; day?: string; stage?: string; ground?: string; group?: string };
 
-type Filters = { team: string; group: string; day: string; stage: string; ground: string };
+type Filters = { team: string; group: string; stage: string; ground: string };
+const EMPTY: Filters = { team: "", group: "", stage: "", ground: "" };
 
-const EMPTY: Filters = { team: "", group: "", day: "", stage: "", ground: "" };
+const DATES: Record<1 | 2, string> = { 1: "28 November", 2: "29 November" };
 
-function applyFilters(matches: ViewMatch[], f: Filters): ViewMatch[] {
+function applyFilters(matches: ViewMatch[], f: Filters, day: DayChoice): ViewMatch[] {
   return matches.filter((m) => {
+    if (day !== "both" && String(m.day) !== day) return false;
     if (f.team && m.a.teamId !== f.team && m.b.teamId !== f.team) return false;
     if (f.group === "KO" ? m.stage === "league" : f.group && m.group !== f.group) return false;
-    if (f.day && String(m.day) !== f.day) return false;
     if (f.stage && m.stage !== f.stage) return false;
     if (f.ground && m.ground !== f.ground) return false;
     return true;
   });
 }
 
-function bySlot(matches: ViewMatch[]): { key: string; label: string; day: 1 | 2; items: ViewMatch[] }[] {
-  const out: { key: string; label: string; day: 1 | 2; items: ViewMatch[] }[] = [];
-  for (const match of [...matches].sort((x, y) => x.startsAt.localeCompare(y.startsAt) || x.ground.localeCompare(y.ground))) {
-    const key = `${match.date}-${match.startMinutes}`;
-    let slot = out.find((s) => s.key === key);
-    if (!slot) {
-      slot = { key, label: timeText(match.startMinutes), day: match.day, items: [] };
-      out.push(slot);
-    }
-    slot.items.push(match);
-  }
-  return out;
+function startTab(initial: InitialView | undefined, official: boolean): TabId {
+  const tab = initial?.tab;
+  if (tab === "groups" || tab === "teams" || tab === "bracket" || (tab === "standings" && official)) return tab;
+  if (!tab && initial?.team) return "teams";
+  return "schedule";
+}
+
+function startDay(initial: InitialView | undefined): DayChoice {
+  const value = initial?.day ?? initial?.tab;
+  if (value === "2026-11-29" || value === "2" || value === "sunday") return "2";
+  if (value === "both" || value === "all") return "both";
+  return "1";
 }
 
 export function ScheduleViews({
@@ -63,9 +64,7 @@ export function ScheduleViews({
   qualification,
   teams,
   drawRef,
-  publishedAt,
   initial,
-  onReplay,
 }: {
   kind: "official" | "trial";
   plan: DrawPlan;
@@ -73,9 +72,7 @@ export function ScheduleViews({
   qualification?: Qualification | null;
   teams: PublicTeam[];
   drawRef?: string | null;
-  publishedAt?: string | null;
   initial?: InitialView;
-  onReplay?: () => void;
 }) {
   const official = kind === "official";
   const matches = useMemo(() => buildViewMatches(plan, fixtures), [plan, fixtures]);
@@ -93,176 +90,149 @@ export function ScheduleViews({
     [plan, teamMap],
   );
 
-  const tabs: { id: TabId; label: string }[] = [
-    { id: "all", label: "All matches" },
-    { id: "saturday", label: "Saturday" },
-    { id: "sunday", label: "Sunday" },
-    { id: "groups", label: "By group" },
-    { id: "teams", label: "By team" },
-    { id: "bracket", label: "Knockouts" },
-    ...(official ? [{ id: "standings" as const, label: "Standings" }] : []),
+  // Phones get shorter labels so all five tabs fit without a hidden one off-screen.
+  const tabs: { id: TabId; label: string; short: string }[] = [
+    { id: "schedule", label: "Schedule", short: "Schedule" },
+    { id: "groups", label: "Groups", short: "Groups" },
+    { id: "teams", label: "Teams", short: "Teams" },
+    { id: "bracket", label: "Knockouts", short: "Bracket" },
+    ...(official ? [{ id: "standings" as const, label: "Standings", short: "Table" }] : []),
   ];
-  const startTab = (tabs.find((t) => t.id === initial?.tab)?.id ?? (initial?.team ? "teams" : "saturday")) as TabId;
-  const [tab, setTab] = useState<TabId>(startTab);
+  const [tab, setTab] = useState<TabId>(startTab(initial, official));
+  const [day, setDay] = useState<DayChoice>(startDay(initial));
   const [filters, setFilters] = useState<Filters>({
     ...EMPTY,
-    team: resolveTeam(initial?.team),
     group: initial?.group ?? "",
-    day: initial?.day === "2026-11-28" ? "1" : initial?.day === "2026-11-29" ? "2" : (initial?.day ?? ""),
     stage: initial?.stage ?? "",
     ground: initial?.ground ?? "",
   });
+  const [moreFilters, setMoreFilters] = useState(Boolean(initial?.group || initial?.stage || initial?.ground));
   const [team, setTeam] = useState<string>(resolveTeam(initial?.team) || (orderedTeams[0]?.id ?? ""));
   const [group, setGroup] = useState<GroupCode>("A");
-  const viewsRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
 
-  // Keep the address shareable (official only): the team and tab survive a copy-paste.
+  // Keep the address shareable (official only): the open tab and team survive a copy-paste.
   useEffect(() => {
     if (!official) return;
     const url = new URL(window.location.href);
-    url.searchParams.delete("day");
-    url.searchParams.delete("stage");
-    url.searchParams.delete("ground");
-    if (tab === "teams" && team) {
-      url.searchParams.set("team", teamMap.get(team)?.slug ?? team);
-      url.searchParams.set("tab", "teams");
-    } else {
-      url.searchParams.delete("team");
-      if (tab === "saturday") url.searchParams.delete("tab");
-      else url.searchParams.set("tab", tab);
-    }
+    for (const key of ["day", "stage", "ground", "group", "team", "tab"]) url.searchParams.delete(key);
+    if (tab === "teams" && team) url.searchParams.set("team", teamMap.get(team)?.slug ?? team);
+    else if (tab !== "schedule") url.searchParams.set("tab", tab);
+    else if (day !== "1") url.searchParams.set("day", day === "2" ? "2026-11-29" : "both");
     window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
-  }, [official, tab, team, teamMap]);
+  }, [official, tab, team, day, teamMap]);
 
   const openTeam = useCallback((teamId: string) => {
     setTeam(teamId);
     setTab("teams");
-    window.requestAnimationFrame(() => viewsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    window.requestAnimationFrame(() => rootRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
   }, []);
 
-  const effective: Filters = useMemo(() => {
-    if (tab === "saturday") return { ...filters, day: "1" };
-    if (tab === "sunday") return { ...filters, day: "2" };
-    return filters;
-  }, [tab, filters]);
-  const listed = useMemo(() => applyFilters(matches, effective), [matches, effective]);
-  const filterActive = Object.values(filters).some(Boolean);
-  const showFilters = tab === "all" || tab === "saturday" || tab === "sunday";
-
+  const listed = useMemo(() => applyFilters(matches, filters, day), [matches, filters, day]);
+  const extraCount = [filters.group, filters.stage, filters.ground].filter(Boolean).length;
   const set = (key: keyof Filters) => (event: React.ChangeEvent<HTMLSelectElement>) => setFilters((current) => ({ ...current, [key]: event.target.value }));
 
   return (
-    <div className={official ? "dr-views" : "dr-views dr-views--trial"} ref={viewsRef} id="dr-views">
-      <div className={official ? "dr-banner dr-banner--official" : "dr-banner dr-banner--trial"} role="status">
-        {official ? (
-          <>
-            <span className="dr-banner-tag">Official</span>
-            <span>
-              Draw <b>{drawRef}</b>
-              {publishedAt ? <> · published {formatIst(publishedAt)}</> : null}
-            </span>
-            {onReplay ? (
-              <button type="button" className="dr-btn dr-btn--ghost dr-btn--sm" onClick={onReplay}>
-                Replay reveal
-              </button>
-            ) : null}
-          </>
-        ) : (
-          <>
-            <span className="dr-banner-tag">Trial</span>
-            <span>
-              <b>TRIAL / DEMO — NOT OFFICIAL.</b> A practice draw from the real roster. Nothing here is saved or published.
-            </span>
-          </>
-        )}
-      </div>
-
-      <div className="dr-tabs" role="tablist" aria-label="Schedule views">
+    <div className={official ? "dr-views" : "dr-views dr-views--trial"} ref={rootRef} id="dr-views" data-ref={drawRef ?? undefined}>
+      <div className="dr-tabs" role="tablist" aria-label="Fixture views">
         {tabs.map((item) => (
-          <button key={item.id} role="tab" type="button" id={`dr-tab-${item.id}`} aria-selected={tab === item.id} aria-controls="dr-panel" className={tab === item.id ? "is-active" : undefined} onClick={() => setTab(item.id)}>
-            {item.label}
+          <button
+            key={item.id}
+            role="tab"
+            type="button"
+            id={`dr-tab-${item.id}`}
+            aria-selected={tab === item.id}
+            aria-controls="dr-panel"
+            className={tab === item.id ? "is-active" : undefined}
+            onClick={() => setTab(item.id)}
+            aria-label={item.label}
+          >
+            <span className="dr-tab-long">{item.label}</span>
+            <span className="dr-tab-short" aria-hidden="true">
+              {item.short}
+            </span>
           </button>
         ))}
       </div>
 
-      {showFilters ? (
-        <div className="dr-filters" role="group" aria-label="Filter matches">
-          <label>
-            <span>Team</span>
-            <select value={filters.team} onChange={set("team")}>
-              <option value="">All teams</option>
-              {orderedTeams.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>Group</span>
-            <select value={filters.group} onChange={set("group")}>
-              <option value="">All</option>
-              <option value="A">Group A</option>
-              <option value="B">Group B</option>
-              <option value="C">Group C</option>
-              <option value="KO">Knockouts</option>
-            </select>
-          </label>
-          {tab === "all" ? (
-            <label>
-              <span>Day</span>
-              <select value={filters.day} onChange={set("day")}>
-                <option value="">Both days</option>
-                <option value="1">Saturday</option>
-                <option value="2">Sunday</option>
-              </select>
-            </label>
-          ) : null}
-          <label>
-            <span>Stage</span>
-            <select value={filters.stage} onChange={set("stage")}>
-              <option value="">All stages</option>
-              {(Object.keys(STAGE_LABEL) as (keyof typeof STAGE_LABEL)[]).map((stage) => (
-                <option key={stage} value={stage}>
-                  {STAGE_LABEL[stage]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>Ground</span>
-            <select value={filters.ground} onChange={set("ground")}>
-              <option value="">Both grounds</option>
-              <option value="A">Ground A</option>
-              <option value="B">Ground B</option>
-            </select>
-          </label>
-          {filterActive ? (
-            <button type="button" className="dr-btn dr-btn--ghost dr-btn--sm" onClick={() => setFilters(EMPTY)}>
-              Clear filters
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-
       <div id="dr-panel" role="tabpanel" aria-labelledby={`dr-tab-${tab}`} className="dr-panel">
-        {tab === "all" || tab === "saturday" || tab === "sunday" ? (
-          <Timetable matches={listed} onTeam={openTeam} highlightTeam={filters.team || null} linkable={official} withDays={tab === "all"} />
+        {tab === "schedule" ? (
+          <>
+            <div className="dr-controls">
+              <div className="dr-seg" role="group" aria-label="Day">
+                {(
+                  [
+                    ["1", "Saturday", "28 Nov"],
+                    ["2", "Sunday", "29 Nov"],
+                    ["both", "Both days", ""],
+                  ] as const
+                ).map(([value, label, date]) => (
+                  <button key={value} type="button" aria-pressed={day === value} className={day === value ? "is-active" : undefined} onClick={() => setDay(value)}>
+                    {label}
+                    {date ? <small>{date}</small> : null}
+                  </button>
+                ))}
+              </div>
+              <div className="dr-controls-right">
+                <label className="dr-select">
+                  <span className="dr-sr">Team</span>
+                  <select value={filters.team} onChange={set("team")} aria-label="Show one team">
+                    <option value="">All teams</option>
+                    {orderedTeams.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button type="button" className={extraCount ? "dr-chipbtn is-on" : "dr-chipbtn"} aria-expanded={moreFilters} aria-controls="dr-more-filters" onClick={() => setMoreFilters((value) => !value)}>
+                  Filters{extraCount ? ` · ${extraCount}` : ""}
+                </button>
+              </div>
+            </div>
+            {moreFilters ? (
+              <div className="dr-filters" id="dr-more-filters" role="group" aria-label="More filters">
+                <label>
+                  <span>Group</span>
+                  <select value={filters.group} onChange={set("group")}>
+                    <option value="">All groups</option>
+                    <option value="A">Group A</option>
+                    <option value="B">Group B</option>
+                    <option value="C">Group C</option>
+                    <option value="KO">Knockouts only</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Stage</span>
+                  <select value={filters.stage} onChange={set("stage")}>
+                    <option value="">All stages</option>
+                    {(Object.keys(STAGE_LABEL) as (keyof typeof STAGE_LABEL)[]).map((stage) => (
+                      <option key={stage} value={stage}>
+                        {STAGE_LABEL[stage]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Ground</span>
+                  <select value={filters.ground} onChange={set("ground")}>
+                    <option value="">Both grounds</option>
+                    <option value="A">Ground A</option>
+                    <option value="B">Ground B</option>
+                  </select>
+                </label>
+                {extraCount || filters.team ? (
+                  <button type="button" className="dr-chipbtn" onClick={() => setFilters(EMPTY)}>
+                    Clear all
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+            <Timetable matches={listed} days={day === "both" ? [1, 2] : [Number(day) as 1 | 2]} onTeam={openTeam} highlightTeam={filters.team || null} linkable={official} />
+          </>
         ) : null}
         {tab === "groups" ? <GroupsPanel plan={plan} matches={matches} names={names} teams={teamMap} group={group} setGroup={setGroup} onTeam={openTeam} linkable={official} /> : null}
-        {tab === "teams" ? (
-          <TeamPanel
-            kind={kind}
-            plan={plan}
-            matches={matches}
-            teamId={team}
-            setTeam={setTeam}
-            orderedTeams={orderedTeams}
-            teams={teamMap}
-            drawRef={drawRef ?? null}
-            onTeam={openTeam}
-          />
-        ) : null}
+        {tab === "teams" ? <TeamPanel kind={kind} plan={plan} matches={matches} teamId={team} setTeam={setTeam} orderedTeams={orderedTeams} teams={teamMap} drawRef={drawRef ?? null} onTeam={openTeam} /> : null}
         {tab === "bracket" ? <Bracket matches={matches} onTeam={official ? openTeam : undefined} /> : null}
         {tab === "standings" && official ? (
           qualification ? (
@@ -276,26 +246,57 @@ export function ScheduleViews({
   );
 }
 
-function Timetable({ matches, onTeam, highlightTeam, linkable, withDays }: { matches: ViewMatch[]; onTeam: (teamId: string) => void; highlightTeam: string | null; linkable: boolean; withDays: boolean }) {
-  if (matches.length === 0) return <p className="dr-empty">No matches fit those filters.</p>;
-  const slots = bySlot(matches);
+/** A day as a real timetable: times down the side, Ground A and Ground B across. Phones stack the two grounds. */
+function Timetable({ matches, days, onTeam, highlightTeam, linkable }: { matches: ViewMatch[]; days: (1 | 2)[]; onTeam: (teamId: string) => void; highlightTeam: string | null; linkable: boolean }) {
+  if (matches.length === 0) return <p className="dr-empty">No matches fit that choice.</p>;
   return (
     <div className="dr-timetable">
-      {slots.map((slot, position) => {
-        const heading = withDays && slot.day !== slots[position - 1]?.day ? slot.day : null;
+      {days.map((day) => {
+        const rows = matches.filter((m) => m.day === day);
+        if (rows.length === 0) return null;
+        const slots = [...new Set(rows.map((m) => m.startMinutes))].sort((a, b) => a - b);
+        const league = rows.filter((m) => m.stage === "league").length;
+        const meta =
+          day === 1
+            ? `${rows.length} ${rows.length === 1 ? "match" : "matches"} · 6 overs a side`
+            : league === rows.length
+              ? `${rows.length} league ${rows.length === 1 ? "match" : "matches"} · 6 overs a side`
+              : `${rows.length} ${rows.length === 1 ? "match" : "matches"} · league and quarterfinals 6 overs, semifinals and final 8`;
         return (
-          <section key={slot.key} className="dr-slot" aria-label={`${DAY_LABEL[slot.day]} ${slot.label}`}>
-            {heading ? (
-              <h3 className="dr-day">
-                {DAY_LABEL[heading]}
-                <span>{heading === 1 ? "28 November 2026" : "29 November 2026"}</span>
+          <section className="dr-day" key={day} aria-labelledby={`dr-day-${day}`}>
+            <header className="dr-day-head">
+              <h3 id={`dr-day-${day}`}>
+                {DAY_LABEL[day]} <span>{DATES[day]}</span>
               </h3>
-            ) : null}
-            <h4 className="dr-slot-time">{slot.label}</h4>
-            <div className="dr-slot-matches">
-              {slot.items.map((match) => (
-                <MatchCard key={match.code} match={match} onTeam={onTeam} highlightTeam={highlightTeam} linkable={linkable} />
-              ))}
+              <p>{meta}</p>
+            </header>
+            <div className="dr-grid">
+              <div className="dr-grid-head" aria-hidden="true">
+                <span />
+                <span>Ground A</span>
+                <span>Ground B</span>
+              </div>
+              {slots.map((minutes, index) => {
+                const inSlot = rows.filter((m) => m.startMinutes === minutes);
+                const knockout = inSlot.every((m) => m.stage !== "league");
+                const previousKnockout = index > 0 && rows.filter((m) => m.startMinutes === slots[index - 1]).every((m) => m.stage !== "league");
+                return (
+                  <div key={minutes} className="dr-slotgroup">
+                    {knockout && !previousKnockout ? <p className="dr-grid-divider">Knockouts</p> : null}
+                    <div className={knockout ? "dr-row dr-row--ko" : "dr-row"}>
+                      <time className="dr-row-time">{timeText(minutes)}</time>
+                      {(["A", "B"] as const).map((ground) => {
+                        const match = inSlot.find((m) => m.ground === ground);
+                        return match ? (
+                          <MatchCard key={match.code} match={match} onTeam={onTeam} highlightTeam={highlightTeam} linkable={linkable} />
+                        ) : (
+                          <div key={ground} className="dr-cell-empty" aria-hidden="true" />
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </section>
         );
@@ -323,48 +324,62 @@ function GroupsPanel({
   onTeam: (teamId: string) => void;
   linkable: boolean;
 }) {
-  const members = plan.result.assignments.filter((a) => a.group === group).sort((x, y) => x.slot - y.slot);
-  const own = matches.filter((m) => m.stage === "league" && m.group === group);
+  const own = matches.filter((m) => m.stage === "league" && m.group === group).sort((x, y) => x.startsAt.localeCompare(y.startsAt));
   return (
-    <div className="dr-groups-panel">
-      <div className="dr-chips" role="group" aria-label="Choose a group">
+    <div className="dr-groups">
+      <div className="dr-seg dr-gseg" role="group" aria-label="Group">
         {(["A", "B", "C"] as const).map((code) => (
           <button key={code} type="button" aria-pressed={group === code} className={group === code ? "is-active" : undefined} onClick={() => setGroup(code)}>
             Group {code}
           </button>
         ))}
       </div>
-      <div className="dr-pools">
-        {([1, 2] as const).map((pool) => (
-          <section key={pool} className="dr-pool-card" aria-label={`Group ${group} sub-pool ${pool}`}>
-            <h4>Sub-pool {pool}</h4>
-            <ul>
-              {members
-                .filter((a) => a.subPool === pool)
-                .map((a) => {
-                  const name = names.get(a.teamId) ?? a.teamId;
-                  return (
-                    <li key={a.teamId} className={a.seed ? "is-seed" : undefined}>
-                      <i className="dr-slot-tag">{slotCodeOf(a)}</i>
-                      <TeamMark name={name} logoUrl={teams.get(a.teamId)?.logoUrl} size={26} />
-                      <button type="button" className="dr-link" onClick={() => onTeam(a.teamId)}>
-                        {name}
-                      </button>
-                      {a.seed ? <em className="dr-seed-tag">{SEED_TEXT[a.seed]}</em> : null}
-                    </li>
-                  );
-                })}
-            </ul>
-          </section>
-        ))}
+      <div className="dr-gcards">
+        {(["A", "B", "C"] as const).map((code) => {
+          const members = plan.result.assignments.filter((a) => a.group === code).sort((x, y) => x.slot - y.slot);
+          return (
+            <section key={code} className={group === code ? "dr-gcard is-active" : "dr-gcard"} aria-label={`Group ${code}`}>
+              <header>
+                <h4>Group {code}</h4>
+                <button type="button" className="dr-chipbtn" aria-pressed={group === code} onClick={() => setGroup(code)}>
+                  {group === code ? "Matches below" : "Show matches"}
+                </button>
+              </header>
+              {([1, 2] as const).map((pool) => (
+                <ul key={pool} className="dr-gpool" aria-label={`Sub-pool ${code}${pool}`}>
+                  <li className="dr-gcard-pool">Sub-pool {code}{pool}</li>
+                  {members
+                    .filter((a) => a.subPool === pool)
+                    .map((a) => {
+                      const name = names.get(a.teamId) ?? a.teamId;
+                      return (
+                        <li key={a.teamId} className={a.seed ? "is-seed" : undefined}>
+                          <i className="dr-slot-tag">{slotCodeOf(a)}</i>
+                          <TeamMark name={name} logoUrl={teams.get(a.teamId)?.logoUrl} size={24} />
+                          <button type="button" className="dr-team-btn" onClick={() => onTeam(a.teamId)}>
+                            {name}
+                          </button>
+                          {a.seed ? (
+                            <em className="dr-seed-dot" title={SEED_TEXT[a.seed]}>
+                              {SEED_TEXT[a.seed]}
+                            </em>
+                          ) : null}
+                        </li>
+                      );
+                    })}
+                </ul>
+              ))}
+            </section>
+          );
+        })}
       </div>
-      <h4 className="dr-subtitle">Group {group} league matches</h4>
+      <h4 className="dr-subtitle">
+        Group {group} · {own.length} league matches
+      </h4>
       <div className="dr-list">
-        {[...own]
-          .sort((x, y) => x.startsAt.localeCompare(y.startsAt))
-          .map((match) => (
-            <MatchCard key={match.code} match={match} onTeam={onTeam} linkable={linkable} />
-          ))}
+        {own.map((match) => (
+          <MatchCard key={match.code} match={match} onTeam={onTeam} linkable={linkable} showWhen />
+        ))}
       </div>
     </div>
   );
@@ -412,7 +427,7 @@ function TeamPanel({
   async function makeFile(): Promise<File> {
     const blob = await renderShareCard({
       teamName: name,
-      groupLine: assignment ? `Group ${assignment.group} · Sub-pool ${assignment.subPool} · ${slotCodeOf(assignment)}` : "",
+      groupLine: assignment ? `Group ${assignment.group} · Sub-pool ${assignment.group}${assignment.subPool} · ${slotCodeOf(assignment)}` : "",
       seedLine: assignment?.seed ? SEED_TEXT[assignment.seed] : null,
       matches: own.map((match) => {
         const other = opponentOf(match, teamId);
@@ -464,9 +479,9 @@ function TeamPanel({
   if (!teamId || !assignment) return <p className="dr-empty">Choose a team.</p>;
   return (
     <div className="dr-team">
-      <label className="dr-team-pick">
-        <span>Team</span>
-        <select value={teamId} onChange={(event) => setTeam(event.target.value)}>
+      <label className="dr-select dr-select--wide">
+        <span className="dr-sr">Team</span>
+        <select value={teamId} onChange={(event) => setTeam(event.target.value)} aria-label="Choose a team">
           {orderedTeams.map((item) => (
             <option key={item.id} value={item.id}>
               {item.name}
@@ -475,41 +490,54 @@ function TeamPanel({
         </select>
       </label>
       <header className="dr-team-head">
-        <TeamMark name={name} logoUrl={info?.logoUrl} size={56} />
+        <TeamMark name={name} logoUrl={info?.logoUrl} size={52} />
         <div>
           <h3>{name}</h3>
           <p>
-            Group {assignment.group} · Sub-pool {assignment.subPool} · <b>{slotCodeOf(assignment)}</b>
+            Group {assignment.group} · Sub-pool {assignment.group}
+            {assignment.subPool} · <b>{slotCodeOf(assignment)}</b>
+            {assignment.seed ? <span className="dr-seed-tag">{SEED_TEXT[assignment.seed]}</span> : null}
           </p>
-          {assignment.seed ? <em className="dr-seed-tag">{SEED_TEXT[assignment.seed]}</em> : null}
         </div>
       </header>
-      <h4 className="dr-subtitle">Three league matches</h4>
       <div className="dr-list">
         {own.map((match) => (
-          <MatchCard key={match.code} match={match} onTeam={(id) => (id === teamId ? undefined : onTeam(id))} highlightTeam={teamId} linkable={official} />
+          <MatchCard key={match.code} match={match} onTeam={(id) => (id === teamId ? undefined : onTeam(id))} highlightTeam={teamId} linkable={official} showWhen />
         ))}
       </div>
-      <p className="dr-team-ko">Knockouts: top two in Group {assignment.group}, or one of the two best third-placed teams, play the quarterfinals on Sunday from 11:45 AM.</p>
+      <p className="dr-team-ko">Top two in Group {assignment.group}, or one of the two best third-placed teams, play the quarterfinals on Sunday from 11:45 AM.</p>
       <div className="dr-share" role="group" aria-label="Share these fixtures">
+        <button type="button" className="dr-btn dr-btn--gold dr-btn--sm" disabled={busy} onClick={shareImage}>
+          Share image
+        </button>
+        <button type="button" className="dr-btn dr-btn--ghost dr-btn--sm" disabled={busy} onClick={saveImage}>
+          Save image
+        </button>
         {official ? (
           <>
-            <a className="dr-btn dr-btn--ghost" href={`https://wa.me/?text=${encodeURIComponent(`${summary()}\n${link()}`)}`} target="_blank" rel="noopener noreferrer">
+            <a className="dr-btn dr-btn--ghost dr-btn--sm" href={`https://wa.me/?text=${encodeURIComponent(`${summary()}\n${link()}`)}`} target="_blank" rel="noopener noreferrer">
               Share on WhatsApp
             </a>
-            <button type="button" className="dr-btn dr-btn--ghost" onClick={() => navigator.clipboard?.writeText(link()).then(() => setNote("Link copied."), () => setNote("Copy the address from the browser bar."))}>
+            <button
+              type="button"
+              className="dr-btn dr-btn--ghost dr-btn--sm"
+              onClick={() =>
+                navigator.clipboard?.writeText(link()).then(
+                  () => setNote("Link copied."),
+                  () => setNote("Copy the address from the browser bar."),
+                )
+              }
+            >
               Copy link
             </button>
           </>
         ) : null}
-        <button type="button" className="dr-btn dr-btn--gold" disabled={busy} onClick={shareImage}>
-          Share image
-        </button>
-        <button type="button" className="dr-btn dr-btn--ghost" disabled={busy} onClick={saveImage}>
-          Save image
-        </button>
       </div>
-      {note ? <p className="dr-note" role="status">{note}</p> : null}
+      {note ? (
+        <p className="dr-note" role="status">
+          {note}
+        </p>
+      ) : null}
     </div>
   );
 }
