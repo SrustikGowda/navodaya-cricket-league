@@ -7,13 +7,18 @@ async function noOverflow(page: Page) {
   expect(overflow).toBeLessThanOrEqual(1);
 }
 
-test("the format diagram explains the tournament without overflowing", async ({ page }) => {
+test("the tournament format picture is shown, opens full size, and does not overflow", async ({ page }) => {
   await page.goto("/2026/fixtures");
   await expect(page.getByRole("heading", { name: "Fixtures", exact: true })).toBeVisible();
-  const flow = page.getByRole("list", { name: "Tournament flow" });
-  for (const text of ["18", "Teams", "3", "Groups", "8", "Qualify", "Quarterfinals", "Semifinals", "Final"]) {
-    await expect(flow.getByText(text, { exact: true }).first()).toBeVisible();
-  }
+  const picture = page.getByRole("img", { name: /NCL 2026 tournament format/ });
+  await expect(picture).toBeVisible();
+  // It really loaded, not a broken image.
+  await expect.poll(() => picture.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
+  await expect(page.getByRole("link", { name: /full size/ })).toHaveAttribute("href", "/brand/ncl-2026-format-v1.png");
+  expect((await page.request.get("/brand/ncl-2026-format-v1.png")).status()).toBe(200);
+  // The words behind the picture are available too.
+  await expect(picture).toHaveAttribute("alt", /27 league matches plus 7 knockouts make 34 matches/);
+  await expect(page.getByText("Points and tie-breakers")).toBeVisible();
   await expect(page.getByRole("button", { name: "TRIAL RUN" })).toBeVisible();
   await expect(page.getByRole("button", { name: "REAL RUN" })).toBeVisible();
   await noOverflow(page);

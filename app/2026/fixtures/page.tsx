@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 import Link from "next/link";
 import { DrawStudio } from "@/components/draw/draw-studio";
-import { FormatDiagram } from "@/components/draw/format-diagram";
+import { FormatImage } from "@/components/draw/format-image";
 import "@/components/draw/draw.css";
 import { PublicShell } from "@/components/shell";
 import { getActor } from "@/lib/auth";
@@ -50,7 +50,7 @@ export default async function FixturesPage({ searchParams }: { searchParams: Pro
           <a href="#schedule">Fixtures</a>
         </nav>
 
-        <FormatDiagram />
+        <FormatImage />
 
         <DrawStudio
           initialBoard={board}
