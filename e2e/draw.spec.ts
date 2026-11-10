@@ -170,6 +170,86 @@ test("the real run needs an organizer, the right password and a confirmation", a
   await fresh.close();
 });
 
+test("an admin marks fees, picks the knockouts, enters awards, then deletes the run and redoes it", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop", "Runs once, after the official draw.");
+  expect((await page.request.post("/api/admin/password", { data: { password: "playwright-admin" } })).status()).toBe(200);
+
+  // Entry fee: mark paid on the admin card, and it shows on the public team card.
+  await page.goto("/admin/registrations?q=4s-11");
+  const card = page.locator("article.section").first();
+  await card.getByRole("button", { name: "Mark entry fee paid" }).click();
+  await expect(card.locator(".fee-line")).toContainText("Paid");
+  await page.goto("/2026/teams");
+  await expect(page.locator(".tm-card .tm-paid")).toHaveCount(1);
+  await expect(page.locator(".tm-card", { has: page.locator(".tm-paid") })).toContainText("4s-11");
+
+  // Knockouts: choose teams and winners for Sunday's matches. Winners fill the next round by themselves.
+  await page.goto("/admin/draw");
+  const save = async (match: string, teamA: string, teamB: string, winner: string | null) => {
+    const form = page.locator("form", { hasText: match }).filter({ has: page.getByRole("button", { name: "Save" }) }).first();
+    await form.locator("select").nth(0).selectOption({ label: teamA });
+    await form.locator("select").nth(1).selectOption({ label: teamB });
+    if (winner) await form.locator("select").nth(2).selectOption({ label: winner });
+    await form.getByRole("button", { name: "Save" }).click();
+    await expect(form.getByText("Saved.")).toBeVisible();
+  };
+  await save("#28", "4s-11 (2004–2011)", "RCB United", "4s-11 (2004–2011)");
+  await save("#29", "GTR", "The Elite", "GTR");
+  await save("#30", "Champions-11", "IX-ELEVENS", "IX-ELEVENS");
+  await save("#31", "Tunga Titans", "Malnad Mavericks", "Tunga Titans");
+  await page.reload();
+  const sf1 = page.locator("form", { hasText: "#32" }).first();
+  await expect(sf1.locator("select").nth(0)).toHaveValue(/.+/);
+  await expect(sf1.locator("select").nth(1)).toHaveValue(/.+/);
+  await save("#32", "4s-11 (2004–2011)", "GTR", "4s-11 (2004–2011)");
+  await save("#33", "IX-ELEVENS", "Tunga Titans", "Tunga Titans");
+  await page.goto("/history");
+  await expect(page.getByRole("tab", { name: /2026/ })).toHaveCount(0);
+  await page.goto("/admin/draw");
+  await save("#34", "4s-11 (2004–2011)", "Tunga Titans", "Tunga Titans");
+
+  // The History page now has the edition, with no extra step.
+  await page.goto("/history?year=2026");
+  await expect(page.getByRole("tab", { name: /2026/ })).toBeVisible();
+  await expect(page.locator(".hall-champion h2")).toHaveText("Tunga Titans");
+  await expect(page.locator(".hall-runner")).toContainText("4s-11");
+
+  // Awards typed in settings show up there as well.
+  await page.goto("/admin/settings");
+  const awards = page.locator("#awards");
+  const batter = awards.locator("fieldset", { hasText: "Best batter" }).locator("input");
+  await batter.nth(0).fill("Praveen G J");
+  await batter.nth(1).fill("GTR");
+  await batter.nth(2).fill("122");
+  await awards.getByRole("button", { name: "Save awards" }).click();
+  await expect(awards.getByText("Saved. The History page is updated.")).toBeVisible();
+  await page.goto("/history?year=2026");
+  await expect(page.locator(".hall-standouts")).toContainText("Praveen G J");
+
+  // Deleting the run is an admin action in settings. With results it needs an explicit tick.
+  await page.goto("/admin/settings");
+  const run = page.locator("#official-run");
+  await run.locator("summary").click();
+  await run.locator("input[name=password]").fill("e2e-draw-password");
+  await run.locator("input[name=confirmation]").fill("DELETE NCL 2026 DRAW");
+  await run.locator("input[name=reason]").fill("Redoing the draw after a roster change");
+  await run.getByRole("button", { name: "Delete the official run" }).click();
+  await expect(run.getByText(/have a result|has a result/)).toBeVisible();
+  await run.getByRole("checkbox").check();
+  await run.getByRole("button", { name: "Delete the official run" }).click();
+  await expect(run.getByText(/was deleted/)).toBeVisible();
+
+  // The History entry went with it, the Real Run is available again, and a new draw can be made.
+  await page.goto("/history");
+  await expect(page.getByRole("tab", { name: /2026/ })).toHaveCount(0);
+  await page.goto("/2026/fixtures");
+  await expect(page.getByRole("button", { name: "REAL RUN" })).toBeVisible();
+  const redo = await page.request.post("/api/draw/real", { data: { password: "e2e-draw-password", requestId: "redo-after-delete-0001" } });
+  expect(redo.status()).toBe(200);
+  await page.reload();
+  await expect(page.locator(".dr-status")).toContainText(/NCL26-/);
+});
+
 test("the draw respects reduced motion and still finishes", async ({ browser }, testInfo) => {
   test.skip(testInfo.project.name !== "mobile", "Checked once, on the phone layout.");
   const context = await browser.newContext({ reducedMotion: "reduce", viewport: { width: 360, height: 800 } });

@@ -80,7 +80,8 @@ export async function listPublicTeams(db: Queryable) {
   return remember("public-teams", 20_000, async () => {
     const season = await getActiveSeason(db);
     const rows = await db.query(
-      `select t.*, r.captain_name, r.captain_phone, r.vice_captain_name, r.vice_captain_phone
+      `select t.*, r.captain_name, r.captain_phone, r.vice_captain_name, r.vice_captain_phone,
+         exists (select 1 from payment_attempts p where p.registration_id = t.id and p.status = 'verified') as fee_paid
        from public_teams t
        join registrations r on r.id = t.id
        where t.season_id = $1
@@ -94,7 +95,8 @@ export async function listPublicTeams(db: Queryable) {
 export async function getPublicTeam(db: Queryable, slug: string) {
   const season = await getActiveSeason(db);
   const rows = await db.query(
-    `select t.*, r.captain_name, r.captain_phone, r.vice_captain_name, r.vice_captain_phone
+    `select t.*, r.captain_name, r.captain_phone, r.vice_captain_name, r.vice_captain_phone,
+       exists (select 1 from payment_attempts p where p.registration_id = t.id and p.status = 'verified') as fee_paid
      from public_teams t
      join registrations r on r.id = t.id
      where t.season_id = $1 and t.slug = $2`,
@@ -228,5 +230,7 @@ function mapPublicTeam(row: Row) {
     captainPhone: str(row, "captain_phone"),
     viceCaptainName: str(row, "vice_captain_name"),
     viceCaptainPhone: str(row, "vice_captain_phone"),
+    /** True once an organizer has verified the entry fee. Nothing else about payments is public. */
+    feePaid: bool(row, "fee_paid"),
   };
 }

@@ -104,6 +104,7 @@ export default async function SeasonHome() {
                     <strong>{team.teamName}</strong>
                     {batchLabel(team.batchAdmissionYear, team.batchLeavingYear) ? <span>{batchLabel(team.batchAdmissionYear, team.batchLeavingYear)}</span> : null}
                   </span>
+                  {team.feePaid ? <span className="tm-paid">Fee paid</span> : null}
                   <span className="bc-arrow" aria-hidden="true">→</span>
                 </Link>
               </li>

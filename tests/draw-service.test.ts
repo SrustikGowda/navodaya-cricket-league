@@ -282,7 +282,7 @@ test("the real run refuses a bad roster, a missing seeded team, a manual schedul
   await db3.close();
 });
 
-test("an organizer reset needs the phrase and a reason, is audited, keeps history, and is refused once play has begun", async () => {
+test("deleting the official run needs the phrase and a reason, is audited, keeps history, and asks before taking results off the site", async () => {
   const { db, admin } = await setup();
   const first = await runOfficialDraw(db, admin, { requestId: nextRequest() });
   await assert.rejects(() => resetOfficialDraw(db, admin, { reason: "Wrong roster at the draw", confirmation: "reset" }), (e) => codeOf(e) === "confirmation");
@@ -309,7 +309,7 @@ test("an organizer reset needs the phrase and a reason, is audited, keeps histor
   const fixtures = await listPublicFixtures(db);
   const opener = fixtures.find((f) => f.code === "M01");
   await recordMatchScore(db, admin, opener?.id as string, parseScoreEntry({ outcome: "win", firstBats: "a", first: { runs: 40, wickets: 2, balls: 36, allOut: false }, second: { runs: 30, wickets: 5, balls: 36, allOut: false } }));
-  await assert.rejects(() => resetOfficialDraw(db, admin, { reason: "Trying to redo after a result", confirmation: RESET_PHRASE }), (e) => codeOf(e) === "draw_in_use");
+  await assert.rejects(() => resetOfficialDraw(db, admin, { reason: "Trying to redo after a result", confirmation: RESET_PHRASE }), (e) => codeOf(e) === "results_exist");
   assert.ok(await getOfficialDraw(db));
   await db.close();
 });

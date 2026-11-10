@@ -85,11 +85,11 @@ There is no scoring integration. Organizers can store a tournament URL and a sco
 
 ## Group draw, fixtures and standings
 
-The Fixtures page (`/2026/fixtures`) explains the format, runs the group draw, and then shows the official groups, schedule, bracket and standings. Code lives in `lib/draw/` (pure engine), `lib/draw/service.ts` (persistence), `app/api/draw/*` and `components/draw/*`. Organizers enter scores and record tie decisions at `/admin/draw`.
+The Fixtures page (`/2026/fixtures`) explains the format, runs the group draw, and then shows the official groups, schedule, bracket and standings. Code lives in `lib/draw/` (pure engine), `lib/draw/service.ts` (persistence), `app/api/draw/*` and `components/draw/*`. Organizers enter scores, record tie decisions and choose the knockout teams and winners at `/admin/draw`; awards and the delete control are in `/admin/settings`.
 
 - **Trial run** is open to everyone. It reads the approved roster, generates a complete draw and schedule, and writes nothing.
 - **Real run** needs an organizer session, then the draw password, then a final confirmation. It runs once. The server generates the draw with 32 bytes of OS entropy, validates every rule, and saves groups, memberships, a published schedule version and 34 fixtures in one transaction. A partial unique index (`draws_one_published_per_season`) means the database itself refuses a second published draw. A retry that carries the same request id gets the saved draw back.
-- **Reset** (`/admin/draw`) needs the organizer session, the draw password, a typed phrase and a reason. It is refused once any match has started or has a result, never deletes history, and is audited.
+- **Delete and redo** (`/admin/settings`, admin only): deleting the official run needs the organizer session, the draw password, a typed phrase (`DELETE NCL 2026 DRAW`) and a reason. If matches already have results, an explicit tick is also required. Nothing is destroyed: the old draw, fixtures and scores are archived and come off the site, and the History entry made from the run is removed. The Real Run is then available again on the Fixtures page. Every step is audited.
 - **Everyone sees the same reveal.** Viewers receive a server-sent event (`/api/draw/stream`, with `/api/draw/state` polling as the fallback) and start the saved draw at the shared `reveal_at` time; late arrivals jump into the right moment. Replaying never calls the server.
 - **Anyone can replay a draw**: the entropy is published with the result and `verifyPlan` re-runs the algorithm from it.
 
@@ -105,6 +105,13 @@ Local tryout with sample data (never against a hosted database):
 PGLITE_DIR=.data/pglite-dev npx tsx scripts/seed-roster.ts
 NCL_FIXTURE_RUN_PASSWORD=local-pass ALLOW_LOCAL_AUTH=true SESSION_SECRET=a-long-random-string ADMIN_PASSWORD=local-admin PGLITE_DIR=.data/pglite-dev npm run dev
 ```
+
+## Entry fees, knockouts and History
+
+- **Entry fee paid:** on `/admin/registrations`, an approved team's card has "Mark entry fee paid" (and "Mark not paid" for a mark an organizer made). It creates a verified payment record, the same one the payments page and reconciliation CSV use, so there is one source of truth. A UPI payment a captain sent is verified rather than duplicated and can only be undone with a refund. Teams from batches that passed out in 2021 or later are exempt. A green "Fee paid" badge shows on the public team cards and team page; nothing else about payments is public.
+- **Knockouts by hand:** `/admin/draw` lists the seven knockout matches. Pick the two teams and the winner for each; a winner moves into the next match on its own (never over a team an organizer placed there, and never into a match that has started: those are flagged for confirmation). Scores are optional.
+- **History builds itself:** once the final has a winner, the active edition's Hall of Champions entry is written from the bracket (champion, runner-up, semifinals, the final's score if one was entered) plus the awards typed into `/admin/settings` (best batter, bowler, most valuable player, best fielder). It updates whenever a winner or award changes, and is removed if the run is deleted. An entry an organizer wrote by hand (its source link not this site's) is never overwritten.
+- Schema: migration `006_awards.sql` adds `season_awards`.
 
 ## Tests
 

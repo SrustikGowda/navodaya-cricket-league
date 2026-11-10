@@ -2,22 +2,21 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { oversText, parseOvers, type TieNote } from "@/lib/draw/standings";
 import type { LiveFixture } from "@/lib/draw/types";
+import { isoToMinutes, timeText } from "@/lib/draw/view";
 import { AdminFeedback, useAdminPost } from "../admin-post";
-import { postJson } from "../post-json";
 
 type Props = {
   official: { ref: string; publishedAt: string; planHash: string; seed: string } | null;
   fixtures: LiveFixture[];
   ties: (TieNote & { names: Record<string, string> })[];
   leagueResults: number;
-  resetPhrase: string;
+  roster: { id: string; name: string }[];
   passwordConfigured: boolean;
 };
 
-export function DrawDesk({ official, fixtures, ties, leagueResults, resetPhrase, passwordConfigured }: Props) {
+export function DrawDesk({ official, fixtures, ties, leagueResults, roster, passwordConfigured }: Props) {
   if (!official) {
     return (
       <div className="stack">
@@ -27,6 +26,7 @@ export function DrawDesk({ official, fixtures, ties, leagueResults, resetPhrase,
       </div>
     );
   }
+  const knockouts = fixtures.filter((fixture) => fixture.stage !== "league");
   return (
     <div className="stack">
       <h1>Draw &amp; results</h1>
@@ -46,13 +46,26 @@ export function DrawDesk({ official, fixtures, ties, leagueResults, resetPhrase,
         </section>
       ) : null}
 
-      <section className="stack">
-        <h2>Match results</h2>
-        <p className="quiet">Scores feed the group tables, net run rate and the bracket. Overs are written the cricket way: 5.3 is five overs and three balls. An all-out innings counts at the full overs quota for net run rate.</p>
-        {fixtures.map((fixture) => <ScoreRow key={fixture.id} fixture={fixture} />)}
+      <section className="stack" id="knockouts">
+        <h2>Knockouts · Sunday 29 November</h2>
+        <p className="quiet">
+          Choose who plays in each quarterfinal, semifinal and the final, and who won. A winner moves into the next match by itself. When the final has a winner, the Hall of Champions
+          on the History page updates with the champion, runner-up and semifinals. Best batter and the other awards are entered in <Link href="/admin/settings#awards">Settings</Link>.
+        </p>
+        {knockouts.map((fixture) => (
+          <KnockoutRow key={`${fixture.id}-${fixture.teamAId}-${fixture.teamBId}-${fixture.winnerLabel}-${fixture.status}`} fixture={fixture} roster={roster} />
+        ))}
       </section>
 
-      <ResetForm resetPhrase={resetPhrase} />
+      <section className="stack">
+        <h2>League match results</h2>
+        <p className="quiet">Scores feed the group tables, net run rate and the bracket. Overs are written the cricket way: 5.3 is five overs and three balls. An all-out innings counts at the full overs quota for net run rate.</p>
+        {fixtures.filter((fixture) => fixture.stage === "league").map((fixture) => <ScoreRow key={fixture.id} fixture={fixture} />)}
+      </section>
+
+      <p className="quiet">
+        Need to redo the draw? An admin can delete the official run in <Link href="/admin/settings#official-run">Settings</Link>, then run the Real Run again from the Fixtures page.
+      </p>
     </div>
   );
 }
@@ -176,39 +189,73 @@ function ScoreForm({ fixture, onSaved }: { fixture: LiveFixture; onSaved: () => 
   );
 }
 
-function ResetForm({ resetPhrase }: { resetPhrase: string }) {
-  const router = useRouter();
-  const [state, setState] = useState<{ pending: boolean; message: string; error: string }>({ pending: false, message: "", error: "" });
+function KnockoutRow({ fixture, roster }: { fixture: LiveFixture; roster: { id: string; name: string }[] }) {
+  const form = useAdminPost();
+  const [teamA, setTeamA] = useState(fixture.teamAId ?? "");
+  const [teamB, setTeamB] = useState(fixture.teamBId ?? "");
+  const initialWinner = fixture.winnerLabel ? (fixture.winnerLabel === fixture.teamALabel ? "a" : fixture.winnerLabel === fixture.teamBLabel ? "b" : "") : "";
+  const [winner, setWinner] = useState<"" | "a" | "b">(initialWinner as "" | "a" | "b");
+  const [summary, setSummary] = useState("");
+  const title = fixture.code === "F" ? "Final" : `${fixture.stage === "quarterfinal" ? "Quarterfinal" : "Semifinal"} ${fixture.code?.slice(2)}`;
+  const when = fixture.startsAt ? `${timeText(isoToMinutes(fixture.startsAt))} · ${fixture.ground ?? ""}` : "";
+  const options = (other: string) => roster.filter((team) => team.id !== other);
+  const bothChosen = Boolean(teamA && teamB);
   return (
-    <details className="stack">
-      <summary>Reset the official draw</summary>
-      <p className="alert">A reset withdraws the published draw and schedule so a new one can be run. It is refused once any match has started or has a result. The old draw stays in the audit log.</p>
-      <form
-        className="stack"
-        onSubmit={async (event) => {
-          event.preventDefault();
-          const data = new FormData(event.currentTarget);
-          setState({ pending: true, message: "", error: "" });
-          try {
-            const result = await postJson("/api/draw/reset", {
-              password: String(data.get("password") ?? ""),
-              confirmation: String(data.get("confirmation") ?? ""),
-              reason: String(data.get("reason") ?? ""),
-            });
-            setState({ pending: false, message: `Draw ${String(result.ref)} was reset. A new official draw can now be run.`, error: "" });
-            router.refresh();
-          } catch (caught) {
-            setState({ pending: false, message: "", error: caught instanceof Error ? caught.message : "Nothing was changed." });
-          }
-        }}
-      >
-        <label className="field">Draw password<input className="text-input" name="password" type="password" autoComplete="off" required /></label>
-        <label className="field">Type {resetPhrase} to confirm<input className="text-input" name="confirmation" required autoComplete="off" /></label>
-        <label className="field">Reason (kept in the audit log)<input className="text-input" name="reason" required minLength={10} /></label>
-        <button className="button" type="submit" disabled={state.pending}>Reset the official draw</button>
-        {state.message ? <p className="note" role="status">{state.message}</p> : null}
-        {state.error ? <p className="alert" role="alert">{state.error}</p> : null}
-      </form>
-    </details>
+    <form
+      className="note stack"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void form.submit("draw-knockout", { fixtureId: fixture.id, teamAId: teamA, teamBId: teamB, winner: bothChosen ? winner : "", summary });
+      }}
+    >
+      <p>
+        <strong>
+          #{fixture.number} {title}
+        </strong>{" "}
+        <span className="quiet">
+          {when} · {fixture.overs} overs{fixture.winnerLabel ? ` · won by ${fixture.winnerLabel}` : ""}
+        </span>
+      </p>
+      <label className="field">
+        Team 1
+        <select className="text-input" value={teamA} onChange={(event) => setTeamA(event.target.value)}>
+          <option value="">To be decided ({fixture.code?.startsWith("QF") ? "qualifier seed" : "winner of the earlier round"})</option>
+          {options(teamB).map((team) => (
+            <option key={team.id} value={team.id}>
+              {team.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="field">
+        Team 2
+        <select className="text-input" value={teamB} onChange={(event) => setTeamB(event.target.value)}>
+          <option value="">To be decided</option>
+          {options(teamA).map((team) => (
+            <option key={team.id} value={team.id}>
+              {team.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="field">
+        Winner
+        <select className="text-input" value={bothChosen ? winner : ""} onChange={(event) => setWinner(event.target.value as "" | "a" | "b")} disabled={!bothChosen}>
+          <option value="">No winner yet</option>
+          <option value="a">{roster.find((team) => team.id === teamA)?.name ?? "Team 1"}</option>
+          <option value="b">{roster.find((team) => team.id === teamB)?.name ?? "Team 2"}</option>
+        </select>
+      </label>
+      {winner && bothChosen ? (
+        <label className="field">
+          Result note, optional (for example “by 12 runs”)
+          <input className="text-input" value={summary} onChange={(event) => setSummary(event.target.value)} maxLength={120} />
+        </label>
+      ) : null}
+      <button className="button" type="submit" disabled={form.pending}>
+        {form.pending ? "Saving" : "Save"}
+      </button>
+      <AdminFeedback message={form.message ? "Saved." : ""} error={form.error} />
+    </form>
   );
 }

@@ -136,6 +136,16 @@ body:has(.dr-page)::after {
   color: var(--dr-muted);
   font-size: 0.85rem;
 }
+.dr-status-admin {
+  color: var(--dr-muted);
+  font-size: 0.82rem;
+  text-decoration: underline;
+  text-decoration-color: rgba(240, 200, 98, 0.4);
+  text-underline-offset: 3px;
+}
+.dr-status-admin:hover {
+  color: var(--dr-gold);
+}
 .dr-play {
   width: 12px;
   height: 12px;

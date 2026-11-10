@@ -28,7 +28,7 @@ export type HallEdition = {
   standouts: {
     runs: Standout | null;
     wickets: Standout | null;
-    mvp: { name: string; rank: number | null; note: string | null } | null;
+    mvp: { name: string; team: string | null; rank: number | null; note: string | null } | null;
     fielder: Standout | null;
   };
   semis: string[];
@@ -37,7 +37,7 @@ export type HallEdition = {
   scorecardUrl: string | null;
 };
 
-const ROMAN: Record<number, string> = { 12: "XII", 13: "XIII", 14: "XIV" };
+const ROMAN: Record<number, string> = { 12: "XII", 13: "XIII", 14: "XIV", 15: "XV" };
 
 export function toHallEdition(entry: {
   editionNumber: number;
@@ -165,5 +165,5 @@ function parseMvp(value: string): HallEdition["standouts"]["mvp"] {
   const distinction = comma === -1 ? "" : headline.slice(comma + 2).trim();
   const note = notes.join(". ").replace(/\.$/, "").trim();
   const rank = /top of the cricheroes tournament mvp table/i.test(distinction) ? 1 : null;
-  return { name, rank, note: note || null };
+  return { name, team: rank === null && distinction ? distinction : null, rank, note: note || null };
 }

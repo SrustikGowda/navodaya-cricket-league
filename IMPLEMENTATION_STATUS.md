@@ -63,6 +63,9 @@ Checked against the build prompt on 6 October 2026. The approved poster file was
 - [x] 27 league fixtures, a conflict-free two-day schedule and knockout placeholders, validated before anything is shown or saved
 - [x] Animated reveal with skip, replay, full-screen mode, reduced-motion support, optional sound, and a shared start for all viewers
 - [x] Match scores, net run rate, group tables, wildcard race, organizer decisions for unresolved ties, and automatic quarterfinal fill
+- [x] Admin can mark entry fees paid; a "Fee paid" badge shows on team cards
+- [x] Admin can pick QF, SF and final teams and winners; the History entry for the edition builds itself, with awards typed in settings
+- [x] Admin-only delete of the official run (in settings), after which the Real Run can be done again
 - [ ] Set `NCL_FIXTURE_RUN_PASSWORD` in the Railway environment before the draw
 
 ## Before launch

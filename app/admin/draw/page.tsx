@@ -2,7 +2,7 @@ import { DrawDesk } from "@/components/draw/draw-desk";
 import { getActor } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { loadBoard } from "@/lib/draw/board";
-import { drawPasswordConfigured, RESET_PHRASE } from "@/lib/draw/service";
+import { drawPasswordConfigured } from "@/lib/draw/service";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +24,7 @@ export default async function DrawAdminPage() {
       fixtures={board.fixtures}
       ties={ties}
       leagueResults={board.qualification?.leagueMatchesPlayed ?? 0}
-      resetPhrase={RESET_PHRASE}
+      roster={[...(official?.plan.roster ?? [])].sort((a, b) => a.name.localeCompare(b.name))}
       passwordConfigured={drawPasswordConfigured()}
     />
   );

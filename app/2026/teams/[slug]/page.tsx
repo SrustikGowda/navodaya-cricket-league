@@ -32,6 +32,7 @@ export default async function TeamPage({ params }: { params: Promise<{ slug: str
     <PublicShell>
       <p className="kicker">Batch {team.batchAdmissionYear}–{team.batchLeavingYear}</p>
       <h1>{team.teamName}</h1>
+      {team.feePaid ? <p><span className="tm-paid">Entry fee paid</span></p> : null}
       {placement ? (
         <p className="quiet">
           Group {placement.code} · Sub-pool {placement.sub_pool} · {placement.code}{placement.slot} ·{" "}

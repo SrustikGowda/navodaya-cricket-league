@@ -29,7 +29,10 @@ export async function seedDatabase(db: Db): Promise<void> {
     [VENUE_MAPS_URL],
   );
 
-  await db.execute("delete from archive_entries where edition_number not in (12, 13, 14)");
+  // The active edition's entry is written by the site from the draw and results; it must survive a restart.
+  await db.execute(
+    "delete from archive_entries where edition_number not in (12, 13, 14) and edition_number not in (select edition_number from seasons where active = true)",
+  );
   for (const entry of heritageSeed) {
     await db.execute(
       `insert into archive_entries (
