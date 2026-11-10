@@ -109,4 +109,7 @@ export type LiveFixture = {
   status: string;
   winnerLabel: string | null;
   summary: string | null;
+  /** Each side's innings as "48/3 (6.0)", once a score is recorded. */
+  scoreA: string | null;
+  scoreB: string | null;
 };

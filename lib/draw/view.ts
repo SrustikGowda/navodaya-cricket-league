@@ -28,6 +28,8 @@ export type ViewMatch = {
   summary: string | null;
   /** Database id, used to link to the match page. Null for a trial run. */
   fixtureId: string | null;
+  scoreA: string | null;
+  scoreB: string | null;
 };
 
 export const STAGE_LABEL: Record<Stage, string> = { league: "League", quarterfinal: "Quarterfinal", semifinal: "Semifinal", final: "Final" };
@@ -88,6 +90,8 @@ export function buildViewMatches(plan: DrawPlan, live?: LiveFixture[]): ViewMatc
       winnerLabel: row?.winnerLabel ?? null,
       summary: row?.summary ?? null,
       fixtureId: row?.id ?? null,
+      scoreA: row?.scoreA ?? null,
+      scoreB: row?.scoreB ?? null,
     };
   });
 }

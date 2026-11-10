@@ -10,34 +10,59 @@ const ALT =
   "Quarterfinals are seed 1 v seed 8, seed 4 v seed 5, seed 2 v seed 7 and seed 3 v seed 6. The winners of quarterfinals 1 and 2 meet in semifinal 1, the winners of quarterfinals 3 and 4 meet in semifinal 2, and the two semifinal winners play the final. " +
   "27 league matches plus 7 knockouts make 34 matches. League and quarterfinals are 6 overs a side; semifinals and the final are 8 overs a side.";
 
+const FACTS = [
+  { big: "3 × 6", title: "Three groups of six", text: "Each group is split into two sub-pools of three." },
+  { big: "3", title: "League matches each", text: "Every team plays the three teams in the other sub-pool." },
+  { big: "8", title: "Reach the quarterfinals", text: "Top two of each group, plus the best two third-placed teams." },
+  { big: "34", title: "Matches in two days", text: "League and quarterfinals 6 overs a side. Semifinals and final 8." },
+] as const;
+
 /**
- * Section A: the tournament format picture supplied by the organizers, plus the published points and tie-breaker rules.
- * Served as the original file (it is only about 200 KB) so the small text stays sharp, and the same file opens full size on tap.
+ * How the tournament works: the organizers' format picture beside four short facts. The facts carry the meaning on
+ * phones, where the picture's small text cannot be read; the picture opens full size on tap. The original file is
+ * served (about 200 KB) so the text stays sharp.
  */
 export function FormatImage() {
   return (
-    <section className="dr-section dr-format" aria-labelledby="dr-format-title" id="format">
-      <h2 id="dr-format-title" className="dr-sr">
-        NCL 2026 tournament format
-      </h2>
-      <a className="dr-format-img" href={SRC} target="_blank" rel="noopener noreferrer" aria-label="Open the tournament format picture full size, in a new tab">
-        <Image src={SRC} alt={ALT} width={1600} height={2160} unoptimized priority />
-      </a>
-      <p className="dr-format-hint">Tap or click the picture to open it full size.</p>
-
-      <details className="dr-rules">
-        <summary>Points and tie-breakers</summary>
-        <div>
-          <p>
-            Win <b>{POINTS.win}</b> · Tie or no result <b>{POINTS.tie}</b> each · Loss <b>{POINTS.loss}</b>
-          </p>
-          <ol>
-            {TIE_BREAKERS.map((rule) => (
-              <li key={rule}>{rule}</li>
+    <div className="dr-about-inner">
+      <header className="dr-about-head">
+        <p className="dr-eyebrow">How it works</p>
+        <h2 id="dr-format-title">The tournament format</h2>
+      </header>
+      <div className="dr-about-body">
+        <figure className="dr-about-figure">
+          <a className="dr-format-img" href={SRC} target="_blank" rel="noopener noreferrer" aria-label="Open the tournament format picture full size, in a new tab">
+            <Image src={SRC} alt={ALT} width={1600} height={2160} unoptimized />
+          </a>
+          <figcaption>Tap the picture to open it full size.</figcaption>
+        </figure>
+        <div className="dr-about-text">
+          <ul className="dr-facts">
+            {FACTS.map((fact) => (
+              <li key={fact.title}>
+                <b>{fact.big}</b>
+                <span>
+                  <strong>{fact.title}</strong>
+                  {fact.text}
+                </span>
+              </li>
             ))}
-          </ol>
+          </ul>
+          <details className="dr-rules">
+            <summary>Points and tie-breakers</summary>
+            <div>
+              <p>
+                Win <b>{POINTS.win}</b> · Tie or no result <b>{POINTS.tie}</b> each · Loss <b>{POINTS.loss}</b>
+              </p>
+              <ol>
+                {TIE_BREAKERS.map((rule) => (
+                  <li key={rule}>{rule}</li>
+                ))}
+              </ol>
+            </div>
+          </details>
         </div>
-      </details>
-    </section>
+      </div>
+    </div>
   );
 }

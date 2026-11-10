@@ -10,7 +10,7 @@ import type { Actor } from "../types";
 import { ALGORITHM, GROUND_NAMES, REVEAL_LEAD_MS } from "./config";
 import { generatePlan, planHash } from "./plan";
 import { resolveSeeds, type RosterTeam } from "./seeds";
-import { computeQualification, type MatchScore, type OrganizerDecision, type Qualification } from "./standings";
+import { computeQualification, oversText, type MatchScore, type OrganizerDecision, type Qualification } from "./standings";
 import type { DrawPlan, GroupCode, LiveFixture, OfficialDrawView, PublicTeam } from "./types";
 
 export const RESET_PHRASE = "RESET NCL 2026 DRAW";
@@ -178,33 +178,48 @@ export async function getDrawState(db: Queryable): Promise<{ state: "none" | "pu
 
 export async function liveFixtures(db: Queryable, drawId: string): Promise<LiveFixture[]> {
   const rows = await db.query<Row>(
-    `select f.*, g.name as ground_name, gr.code as group_code
+    `select f.*, g.name as ground_name, gr.code as group_code,
+       ms.outcome as score_outcome, ms.first_bats, ms.first_runs, ms.first_wickets, ms.first_balls,
+       ms.second_runs, ms.second_wickets, ms.second_balls
      from fixtures f
      join schedule_versions sv on sv.id = f.schedule_version_id
      left join grounds g on g.id = f.ground_id
      left join groups gr on gr.id = f.group_id
+     left join match_scores ms on ms.fixture_id = f.id
      where f.draw_id = $1 and sv.status = 'published'
      order by f.match_number`,
     [drawId],
   );
-  return rows.map((row) => ({
-    id: requiredStr(row, "id"),
-    code: str(row, "code"),
-    number: num(row, "match_number"),
-    stage: requiredStr(row, "stage"),
-    group: (str(row, "group_code") as GroupCode | null) ?? null,
-    startsAt: str(row, "starts_at"),
-    durationMinutes: num(row, "duration_minutes"),
-    overs: num(row, "overs"),
-    ground: str(row, "ground_name"),
-    teamAId: str(row, "team_a_registration_id"),
-    teamBId: str(row, "team_b_registration_id"),
-    teamALabel: requiredStr(row, "team_a_label"),
-    teamBLabel: requiredStr(row, "team_b_label"),
-    status: requiredStr(row, "status"),
-    winnerLabel: str(row, "winner_label"),
-    summary: str(row, "summary"),
-  }));
+  const innings = (row: Row, which: "first" | "second"): string | null => {
+    const runs = num(row, `${which}_runs`);
+    const balls = num(row, `${which}_balls`);
+    if (runs == null || balls == null) return null;
+    return `${runs}/${num(row, `${which}_wickets`) ?? 0} (${oversText(balls)})`;
+  };
+  return rows.map((row) => {
+    const scored = str(row, "score_outcome") && str(row, "score_outcome") !== "no_result";
+    const aFirst = str(row, "first_bats") !== "b";
+    return {
+      id: requiredStr(row, "id"),
+      code: str(row, "code"),
+      number: num(row, "match_number"),
+      stage: requiredStr(row, "stage"),
+      group: (str(row, "group_code") as GroupCode | null) ?? null,
+      startsAt: str(row, "starts_at"),
+      durationMinutes: num(row, "duration_minutes"),
+      overs: num(row, "overs"),
+      ground: str(row, "ground_name"),
+      teamAId: str(row, "team_a_registration_id"),
+      teamBId: str(row, "team_b_registration_id"),
+      teamALabel: requiredStr(row, "team_a_label"),
+      teamBLabel: requiredStr(row, "team_b_label"),
+      status: requiredStr(row, "status"),
+      winnerLabel: str(row, "winner_label"),
+      summary: str(row, "summary"),
+      scoreA: scored ? innings(row, aFirst ? "first" : "second") : null,
+      scoreB: scored ? innings(row, aFirst ? "second" : "first") : null,
+    };
+  });
 }
 
 export async function loadLeagueScores(db: Queryable, drawId: string): Promise<MatchScore[]> {
