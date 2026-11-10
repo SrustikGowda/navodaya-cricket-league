@@ -32,6 +32,9 @@ export type PublicFixture = {
   scheduleVersionId: string | null;
   schedulePublishedAt: string | null;
   scheduleNote: string | null;
+  /** Stable draw code such as M07, QF1 or F. Null for fixtures that did not come from the official draw. */
+  code: string | null;
+  groupCode: string | null;
 };
 
 async function allPublicFixtures(db: Queryable): Promise<PublicFixture[]> {
@@ -207,6 +210,8 @@ function mapPublicFixture(row: Row): PublicFixture {
     scheduleVersionId: str(row, "schedule_version_id"),
     schedulePublishedAt: str(row, "schedule_published_at"),
     scheduleNote: str(row, "schedule_note"),
+    code: str(row, "code"),
+    groupCode: str(row, "group_code"),
   };
 }
 

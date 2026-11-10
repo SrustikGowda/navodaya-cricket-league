@@ -50,10 +50,20 @@ Checked against the build prompt on 6 October 2026. The approved poster file was
 - Phone or SMS OTP
 - A payment gateway
 - CricHeroes synchronization, scraping, or an embedded widget
-- Automatic points or NRR
+- Ball-by-ball scoring (points and net run rate are now calculated from the scores organizers enter)
 - Betting, fantasy, an AI chatbot, or a ball-by-ball scorer
 - Kannada copy, QR check-in, volunteer assignments, jersey or meal counts
 - A public deploy was not part of the first build. The live site is now on Railway: https://navodaya-cricket-league-production.up.railway.app
+
+## Milestone 5
+
+- [x] Fixtures page rebuilt: tournament format infographic, live group draw, schedule, bracket, standings
+- [x] Seeded draw (2025 champion, runner-up and two semifinalists) guaranteed by construction, with seeds resolved from the approved roster by database id
+- [x] Trial run (no writes, unlimited) and a once-only, password-protected, audited Real Run
+- [x] 27 league fixtures, a conflict-free two-day schedule and knockout placeholders, validated before anything is shown or saved
+- [x] Animated reveal with skip, replay, full-screen mode, reduced-motion support, optional sound, and a shared start for all viewers
+- [x] Match scores, net run rate, group tables, wildcard race, organizer decisions for unresolved ties, and automatic quarterfinal fill
+- [ ] Set `NCL_FIXTURE_RUN_PASSWORD` in the Railway environment before the draw
 
 ## Before launch
 

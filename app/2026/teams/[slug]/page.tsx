@@ -20,10 +20,24 @@ export default async function TeamPage({ params }: { params: Promise<{ slug: str
   const team = await getPublicTeam(await getDb(), slug);
   if (!team) notFound();
   const logo = team.logoPath?.split(":").at(-1);
+  const placement = (
+    await (await getDb()).query<{ code: string; sub_pool: number; slot: number }>(
+      `select g.code, gm.sub_pool, gm.slot from group_memberships gm join groups g on g.id = gm.group_id
+       join draws d on d.id = g.draw_id and d.status = 'published'
+       where gm.registration_id = $1 and g.code is not null`,
+      [team.id],
+    )
+  )[0];
   return (
     <PublicShell>
       <p className="kicker">Batch {team.batchAdmissionYear}–{team.batchLeavingYear}</p>
       <h1>{team.teamName}</h1>
+      {placement ? (
+        <p className="quiet">
+          Group {placement.code} · Sub-pool {placement.sub_pool} · {placement.code}{placement.slot} ·{" "}
+          <Link href={`/2026/fixtures?team=${team.slug}`}>See this team&apos;s fixtures and share them</Link>
+        </p>
+      ) : null}
       <div className="team-officers">
         <Officer role="Captain" name={team.captainName} phone={team.captainPhone} />
         <Officer role="Vice-captain" name={team.viceCaptainName} phone={team.viceCaptainPhone} />

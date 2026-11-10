@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test tests/**/*.test.ts",
     "test:e2e": "playwright test",
+    "test:e2e:draw": "playwright test -c playwright.draw.config.ts",
     "db:migrate": "tsx scripts/migrate.ts"
   },
   "dependencies": {

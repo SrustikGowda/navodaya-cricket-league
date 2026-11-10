@@ -426,15 +426,24 @@ export async function updateMatchStatus(
   await writeAudit(db, actor.id, "fixture.status", "fixture", fixtureId, { status });
 }
 
-export async function recordResult(
-  db: Db,
-  actor: Actor,
-  fixtureId: string,
-  input: { summary: string; source: "manual" | "import"; winnerRegistrationId?: string | null; winnerLabel?: string | null; scorecardUrl?: string | null; livestreamUrl?: string | null },
-): Promise<void> {
+export type ResultInput = {
+  summary: string;
+  source: "manual" | "import";
+  winnerRegistrationId?: string | null;
+  winnerLabel?: string | null;
+  scorecardUrl?: string | null;
+  livestreamUrl?: string | null;
+};
+
+export async function recordResult(db: Db, actor: Actor, fixtureId: string, input: ResultInput): Promise<void> {
+  await db.tx((query) => recordResultTx(query, actor, fixtureId, input));
+}
+
+/** The body of recordResult, for callers that already hold a transaction (for example score entry). */
+export async function recordResultTx(query: Queryable, actor: Actor, fixtureId: string, input: ResultInput): Promise<void> {
   if (actor.role !== "organizer") throw new DomainError("Organizer access is required.", 403, "forbidden");
   if (input.summary.trim().length < 3) throw new DomainError("Enter the result summary. This is an organizer entry, not a live score.");
-  await db.tx(async (query) => {
+  {
     const season = await lockActiveSeason(query);
     const currentRows = await query.query("select * from fixtures where id = $1 and season_id = $2 for update", [fixtureId, season.id]);
     if (!currentRows[0]) throw new DomainError("Match not found.", 404, "not_found");
@@ -485,7 +494,7 @@ export async function recordResult(
       source: input.source,
       winnerChanged,
     });
-  });
+  }
 }
 
 export async function clearResolution(db: Db, actor: Actor, fixtureId: string, note: string): Promise<void> {
