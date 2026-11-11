@@ -1068,6 +1068,8 @@ body:has(.teams-page)::after { display: none; }
   text-decoration: none;
   transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
 }
+/* A fee badge is a fourth item, so it gets its own column instead of pushing the arrow onto a new row. */
+.bc-team:has(.tm-paid, .tm-unpaid, .tm-nofee) { grid-template-columns: auto minmax(0, 1fr) auto auto; }
 .bc-team:hover { border-color: rgba(228, 195, 106, 0.45); background: #1c1a16; }
 .bc-team:active { transform: translateY(1px); }
 .bc-mono {
@@ -1144,7 +1146,7 @@ body:has(.teams-page)::after { display: none; }
   letter-spacing: 0.03em;
   font-variant-numeric: tabular-nums;
 }
-.tm-paid {
+.tm-paid, .tm-unpaid, .tm-nofee {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
@@ -1161,7 +1163,10 @@ body:has(.teams-page)::after { display: none; }
   white-space: nowrap;
 }
 .tm-paid::before { content: "✓"; font-size: 0.75rem; }
-.bc-team .tm-paid { margin-left: 0; margin-right: 4px; }
+.tm-unpaid { border-color: rgba(242, 160, 110, 0.5); background: rgba(242, 160, 110, 0.1); color: #f5b88d; }
+.tm-unpaid::before { content: "○"; font-size: 0.75rem; }
+.tm-nofee { border-color: rgba(255, 255, 255, 0.22); background: rgba(255, 255, 255, 0.06); color: #cfc8b6; }
+.bc-team .tm-paid, .bc-team .tm-unpaid, .bc-team .tm-nofee { margin-left: 0; margin-right: 4px; }
 .tm-arrow { color: #e4c36a; font-size: 1.15rem; line-height: 1; transition: transform 180ms ease; }
 .tm-card:hover .tm-arrow { transform: translateX(3px); }
 .tm-identity { display: flex; align-items: center; gap: 12px; min-width: 0; }

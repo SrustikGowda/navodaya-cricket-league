@@ -196,6 +196,17 @@ test("an admin marks fees, picks the knockouts, enters awards, then deletes the 
   await page.goto("/2026/teams");
   await expect(page.locator(".tm-card .tm-paid")).toHaveCount(1);
   await expect(page.locator(".tm-card", { has: page.locator(".tm-paid") })).toContainText("4s-11");
+  // Every other team says so too: 15 have not paid, and the 2 teams from 2021+ batches show "No fee".
+  await expect(page.locator(".tm-card .tm-unpaid")).toHaveCount(15);
+  await expect(page.locator(".tm-card .tm-unpaid").first()).toHaveText("Fee not paid");
+  await expect(page.locator(".tm-card .tm-nofee")).toHaveCount(2);
+  await expect(page.locator(".tm-card", { has: page.locator(".tm-nofee") })).toHaveCount(2);
+  await expect(page.locator(".tm-card", { hasText: "Hemavathi Hawks" }).locator(".tm-nofee")).toHaveText("No fee");
+  await page.goto("/2026/teams/hemavathi-hawks");
+  await expect(page.locator(".tm-nofee")).toHaveText("No entry fee");
+  await page.goto("/2026");
+  await expect(page.locator(".bc-team .tm-paid")).toHaveCount(1);
+  await expect(page.locator(".bc-team .tm-unpaid")).toHaveCount(3);
 
   // Knockouts: choose teams and winners for Sunday's matches. Winners fill the next round by themselves.
   await page.goto("/admin/draw");

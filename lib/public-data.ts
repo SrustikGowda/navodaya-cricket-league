@@ -2,6 +2,7 @@ import type { Queryable } from "./db";
 import { reportingIso } from "./format";
 import { remember } from "./read-cache";
 import { bool, num, requiredStr, str, type Row } from "./rows";
+import { feeStatusOf } from "./fee-state";
 import { getActiveSeason } from "./season";
 
 export type PublicFixture = {
@@ -88,7 +89,7 @@ export async function listPublicTeams(db: Queryable) {
        order by t.batch_admission_year asc nulls last, t.batch_leaving_year asc nulls last, t.team_name`,
       [season.id],
     );
-    return rows.map(mapPublicTeam);
+    return rows.map((row) => mapPublicTeam(row, season.feePaise));
   });
 }
 
@@ -103,7 +104,7 @@ export async function getPublicTeam(db: Queryable, slug: string) {
     [season.id, slug],
   );
   if (!rows[0]) return null;
-  const team = mapPublicTeam(rows[0]);
+  const team = mapPublicTeam(rows[0], season.feePaise);
   const squad = await db.query(
     "select name, batch_label, role, jersey_number from public_squad where registration_id = $1 order by sort_order",
     [team.id],
@@ -217,7 +218,7 @@ function mapPublicFixture(row: Row): PublicFixture {
   };
 }
 
-function mapPublicTeam(row: Row) {
+function mapPublicTeam(row: Row, feePaise: number | null) {
   return {
     id: requiredStr(row, "id"),
     slug: requiredStr(row, "slug"),
@@ -232,5 +233,7 @@ function mapPublicTeam(row: Row) {
     viceCaptainPhone: str(row, "vice_captain_phone"),
     /** True once an organizer has verified the entry fee. Nothing else about payments is public. */
     feePaid: bool(row, "fee_paid"),
+    /** Paid, not paid, no fee (batch passed out in 2021 or later), or none while the season has no fee. Shown on team cards. */
+    feeStatus: feeStatusOf({ paid: bool(row, "fee_paid"), leavingYear: num(row, "batch_leaving_year"), feePaise }),
   };
 }

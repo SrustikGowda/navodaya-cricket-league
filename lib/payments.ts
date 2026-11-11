@@ -1,6 +1,7 @@
 import { writeAudit } from "./audit";
 import type { Db, Queryable } from "./db";
 import { DomainError, isUniqueViolation } from "./errors";
+import { feeStatusOf, type FeeStatus } from "./fee-state";
 import { num, requiredStr, str, type Row } from "./rows";
 import { clearReadCache } from "./read-cache";
 import { getActiveSeason, paymentCollectionReady } from "./season";
@@ -193,7 +194,7 @@ export async function assertReceiptAccess(db: Queryable, actor: Actor, attemptId
 /** Note written on the payment record when an organizer ticks a team as paid. */
 const ORGANIZER_MARK = "Marked paid by organizer";
 
-export type FeeStatus = "paid" | "unpaid" | "exempt" | "none";
+export type { FeeStatus };
 
 export type FeeRow = { id: string; teamName: string; batch: string | null; status: FeeStatus };
 
@@ -214,13 +215,7 @@ export async function feeChecklist(db: Queryable, seasonId: string): Promise<Fee
     const admission = num(team, "batch_admission_year");
     const leaving = num(team, "batch_leaving_year");
     const paid = team.paid === true || team.paid === "t";
-    const status: FeeStatus = paid
-      ? "paid"
-      : leaving != null && leaving >= 2021
-        ? "exempt"
-        : season.feePaise == null || season.feePaise <= 0
-          ? "none"
-          : "unpaid";
+    const status = feeStatusOf({ paid, leavingYear: leaving, feePaise: season.feePaise });
     return {
       id: requiredStr(team, "id"),
       teamName: requiredStr(team, "team_name"),

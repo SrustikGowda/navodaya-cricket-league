@@ -49,6 +49,7 @@ test("an organizer can tick a team's entry fee as paid, and it shows on the publ
   const [first, second] = teams as [{ id: string; name: string }, { id: string; name: string }];
   await withFee(db, 400_000);
   assert.equal((await listPublicTeams(db)).every((team) => team.feePaid === false), true);
+  assert.equal((await listPublicTeams(db)).every((team) => team.feeStatus === "unpaid"), true, "with a fee set, unpaid teams say so");
   assert.equal((await feeStatuses(db, (await getActiveSeason(db)).id)).get(first.id), "unpaid");
 
   assert.equal(await setFeePaid(db, admin, first.id, true), "paid");
@@ -58,11 +59,14 @@ test("an organizer can tick a team's entry fee as paid, and it shows on the publ
   const teamsNow = await listPublicTeams(db);
   assert.equal(teamsNow.find((t) => t.id === first.id)?.feePaid, true);
   assert.equal(teamsNow.find((t) => t.id === second.id)?.feePaid, false);
+  assert.equal(teamsNow.find((t) => t.id === first.id)?.feeStatus, "paid");
+  assert.equal(teamsNow.find((t) => t.id === second.id)?.feeStatus, "unpaid");
 
   // Unticking works; the audit trail records both, and the old record is kept.
   assert.equal(await setFeePaid(db, admin, first.id, false), "unpaid");
   assert.equal(await setFeePaid(db, admin, first.id, false), "unpaid", "unticking twice is harmless");
   assert.equal((await listPublicTeams(db)).find((t) => t.id === first.id)?.feePaid, false);
+  assert.equal((await listPublicTeams(db)).find((t) => t.id === first.id)?.feeStatus, "unpaid");
   const audit = await db.query<{ action: string }>("select action from audit_events where action in ('payment.mark_paid','payment.unmark_paid') order by created_at");
   assert.deepEqual(audit.map((a) => a.action), ["payment.mark_paid", "payment.unmark_paid"]);
   const kept = await db.query<{ n: number }>("select count(*)::int as n from payment_attempts where registration_id = $1", [first.id]);
@@ -85,9 +89,14 @@ test("fee ticks respect exemptions, a missing fee, older payment records and per
 
   await withFee(db, null);
   await assert.rejects(() => setFeePaid(db, admin, first.id, true), (e) => code(e) === "no_fee");
+  assert.equal((await listPublicTeams(db)).every((t) => t.feeStatus === "none"), true, "no badge while the season has no fee");
   await withFee(db, 400_000);
 
   await db.execute("update registrations set batch_leaving_year = 2022 where id = $1", [second.id]);
+  clearReadCache();
+  const publicNow = await listPublicTeams(db);
+  assert.equal(publicNow.find((t) => t.id === second.id)?.feeStatus, "exempt", "a 2021+ batch shows No fee");
+  assert.equal(publicNow.find((t) => t.id === first.id)?.feeStatus, "unpaid");
   assert.equal((await feeStatuses(db, (await getActiveSeason(db)).id)).get(second.id), "exempt");
   await assert.rejects(() => setFeePaid(db, admin, second.id, true), (e) => code(e) === "exempt");
 

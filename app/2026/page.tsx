@@ -5,6 +5,7 @@ import { HomeMotion } from "@/components/home-motion";
 import { PublicShell } from "@/components/shell";
 import { getDb } from "@/lib/db";
 import { formatEventDates, formatInrFromPaise, formatIst } from "@/lib/format";
+import { FeeBadge } from "@/components/fee-badge";
 import { listPublicAnnouncements, listPublicFixtures, listPublicTeams } from "@/lib/public-data";
 import { entryLabel, getActiveSeason, toPublicSeason } from "@/lib/season";
 
@@ -104,7 +105,7 @@ export default async function SeasonHome() {
                     <strong>{team.teamName}</strong>
                     {batchLabel(team.batchAdmissionYear, team.batchLeavingYear) ? <span>{batchLabel(team.batchAdmissionYear, team.batchLeavingYear)}</span> : null}
                   </span>
-                  {team.feePaid ? <span className="tm-paid">Fee paid</span> : null}
+                  <FeeBadge status={team.feeStatus} />
                   <span className="bc-arrow" aria-hidden="true">→</span>
                 </Link>
               </li>

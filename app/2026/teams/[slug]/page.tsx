@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { FeeBadge } from "@/components/fee-badge";
 import { PublicShell } from "@/components/shell";
 import { RememberTeam } from "@/components/my-team";
 import { ShareBar } from "@/components/share-bar";
@@ -32,7 +33,7 @@ export default async function TeamPage({ params }: { params: Promise<{ slug: str
     <PublicShell>
       <p className="kicker">Batch {team.batchAdmissionYear}–{team.batchLeavingYear}</p>
       <h1>{team.teamName}</h1>
-      {team.feePaid ? <p><span className="tm-paid">Entry fee paid</span></p> : null}
+      {team.feeStatus !== "none" ? <p><FeeBadge status={team.feeStatus} long /></p> : null}
       {placement ? (
         <p className="quiet">
           Group {placement.code} · Sub-pool {placement.sub_pool} · {placement.code}{placement.slot} ·{" "}
