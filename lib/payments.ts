@@ -198,7 +198,7 @@ export type FeeStatus = "paid" | "unpaid" | "exempt" | "none";
 export type FeeRow = { id: string; teamName: string; batch: string | null; status: FeeStatus };
 
 /**
- * Every approved team with its entry fee state, by name: paid (ticked), exempt (batch left in 2021 or later),
+ * Every approved team with its entry fee state, oldest batch first: paid (ticked), exempt (batch left in 2021 or later),
  * none (no fee set for the season) or unpaid.
  */
 export async function feeChecklist(db: Queryable, seasonId: string): Promise<FeeRow[]> {
@@ -207,7 +207,7 @@ export async function feeChecklist(db: Queryable, seasonId: string): Promise<Fee
     `select r.id, r.team_name, r.batch_admission_year, r.batch_leaving_year,
        exists (select 1 from payment_attempts p where p.registration_id = r.id and p.status = 'verified') as paid
      from registrations r where r.season_id = $1 and r.status = 'approved'
-     order by lower(r.team_name)`,
+     order by r.batch_admission_year asc nulls last, r.batch_leaving_year asc nulls last, lower(r.team_name)`,
     [seasonId],
   );
   return teams.map((team) => {

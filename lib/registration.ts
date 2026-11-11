@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { upsertProfile } from "./accounts";
 import { writeAudit } from "./audit";
 import type { Db, Queryable } from "./db";
+import { BATCH_ORDER_SQL } from "./batch-order";
 import { DomainError, isUniqueViolation } from "./errors";
 import { cricheroesPlayerId, formatInrFromPaise, formatIst, normalizeName, normalizePhone, slugify } from "./format";
 import { bool, num, requiredStr, str, type Row } from "./rows";
@@ -779,7 +780,7 @@ export async function listRegistrations(
     params.push(`%${filters.q.trim().toLowerCase()}%`);
     where += ` and (lower(team_name) like $${params.length} or lower(captain_name) like $${params.length} or lower(captain_email) like $${params.length} or lower(coalesce(reference, '')) like $${params.length})`;
   }
-  const rows = await db.query(`select * from registrations where ${where} order by updated_at desc`, params);
+  const rows = await db.query(`select * from registrations where ${where} order by ${BATCH_ORDER_SQL}`, params);
   const result: Registration[] = [];
   for (const row of rows) result.push(await withPlayers(db, row));
   return result;
