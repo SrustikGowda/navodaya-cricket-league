@@ -9,7 +9,6 @@ import { SignOutButton } from "./sign-out-button";
 const LINKS = [
   ["/admin", "Overview"],
   ["/admin/registrations", "Registrations"],
-  ["/admin/payments", "Payments"],
   ["/admin/fixtures", "Fixtures"],
   ["/admin/draw", "Draw & results"],
   ["/admin/standings", "Standings"],

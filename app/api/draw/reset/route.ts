@@ -6,7 +6,7 @@ import { clientKey } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
-/** Admin deletes the official run so it can be redone: organizer session, draw password, typed phrase and a reason. Audited. */
+/** Admin deletes the official run so it can be redone: organizer session, draw password and the typed phrase. Audited. */
 export async function POST(request: Request) {
   try {
     await guardMutation(request, "draw-reset");

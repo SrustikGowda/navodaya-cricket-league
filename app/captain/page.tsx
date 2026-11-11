@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { LogoutButton, PaymentBox } from "@/components/captain-tools";
+import { LogoutButton } from "@/components/captain-tools";
 import { PublicShell } from "@/components/shell";
 import { getActor } from "@/lib/auth";
 import { captainDashboard } from "@/lib/captain-actions";
@@ -8,19 +8,17 @@ import { getDb } from "@/lib/db";
 import { formatInrFromPaise, formatIst } from "@/lib/format";
 import { listPublicFixtures } from "@/lib/public-data";
 import { registrationPhase, registrationStatusCopy } from "@/lib/season";
-import QRCode from "qrcode";
 
 export const metadata = { title: "Captain", robots: { index: false, follow: false } };
 
 export default async function CaptainPage() {
   const actor = await getActor();
   if (!actor) redirect("/captain/login?next=/captain");
-  const { season, registration, payments, instructions } = await captainDashboard(actor);
+  const { season, registration, payments } = await captainDashboard(actor);
   const fixtures = registration
     ? (await listPublicFixtures(await getDb())).filter((fixture) => fixture.teamAId === registration.id || fixture.teamBId === registration.id)
     : [];
-  const qr = instructions ? await QRCode.toDataURL(instructions.link, { margin: 1, width: 280 }) : null;
-  const latest = payments[0];
+  const feePaid = payments.some((payment) => payment.status === "verified");
   return (
     <PublicShell>
       <p className="kicker">Captain desk</p>
@@ -42,25 +40,18 @@ export default async function CaptainPage() {
           </ul>
           <p><Link href={`/captain/card?id=${registration.id}`}>Registration card</Link></p>
           <section className="section">
-            <h2>Payment</h2>
-            {registration.batchLeavingYear != null && registration.batchLeavingYear >= 2021 ? <p>No entry fee is due. Batches that passed out in 2021 or later are exempt.</p> : null}
-            {season.feePaise == null ? <p>The fee has not been decided. No payment is being collected.</p> : null}
-            {season.feePaise === 0 ? <p>The organizer set this edition as free.</p> : null}
-            {latest ? <p>Latest payment state: {latest.status.replaceAll("_", " ")}{latest.rejectionReason ? ` · ${latest.rejectionReason}` : ""}</p> : null}
-            {instructions && qr ? (
-              <div className="stack">
-                <p>Pay {formatInrFromPaise(instructions.amountPaise)} to {instructions.payeeName} · {instructions.upiVpa}</p>
-                <p>Use the note {instructions.note}. Then submit the transaction reference.</p>
-                <img src={qr} alt="" width={220} height={220} />
-                <p><a href={instructions.link}>Open UPI app</a></p>
-                <PaymentBox registrationId={registration.id} note={instructions.note} />
-              </div>
-            ) : season.feePaise && season.feePaise > 0 && (registration.batchLeavingYear == null || registration.batchLeavingYear < 2021) ? <p>Payment instructions appear after approval, and only when the payee and UPI ID are configured.</p> : null}
-            <ul>
-              {payments.map((payment) => (
-                <li key={payment.id}>{payment.status} · {payment.transactionReference ?? "no reference"} {payment.receiptPath ? <a href={`/api/receipts/${payment.id}`}>Receipt</a> : null}</li>
-              ))}
-            </ul>
+            <h2>Entry fee</h2>
+            <p>
+              {registration.batchLeavingYear != null && registration.batchLeavingYear >= 2021
+                ? "No entry fee is due. Batches that passed out in 2021 or later are exempt."
+                : season.feePaise == null
+                  ? "The entry fee has not been decided yet."
+                  : season.feePaise === 0
+                    ? "There is no entry fee this edition."
+                    : feePaid
+                      ? `Paid ✓ (${formatInrFromPaise(season.feePaise)})`
+                      : `${formatInrFromPaise(season.feePaise)}, not paid yet. Pay the organizers directly; they mark it here once it is received.`}
+            </p>
           </section>
           <section className="section">
             <h2>Fixtures</h2>

@@ -1162,19 +1162,6 @@ body:has(.teams-page)::after { display: none; }
 }
 .tm-paid::before { content: "✓"; font-size: 0.75rem; }
 .bc-team .tm-paid { margin-left: 0; margin-right: 4px; }
-.fee-line {
-  display: grid;
-  gap: 0.5rem;
-  margin: 0.6rem 0;
-  padding: 0.7rem 0.85rem;
-  border: 1px solid rgba(255, 225, 160, 0.2);
-  border-radius: 12px;
-}
-.fee-line p { margin: 0; }
-.fee-line--paid { border-color: rgba(127, 211, 155, 0.45); background: rgba(127, 211, 155, 0.07); }
-.fee-line--paid strong, .fee-tick { color: #9be0b3; }
-.fee-line--muted { color: #b7ae9e; }
-.fee-form { display: grid; gap: 0.5rem; }
 .tm-arrow { color: #e4c36a; font-size: 1.15rem; line-height: 1; transition: transform 180ms ease; }
 .tm-card:hover .tm-arrow { transform: translateX(3px); }
 .tm-identity { display: flex; align-items: center; gap: 12px; min-width: 0; }
@@ -1890,7 +1877,51 @@ body:has(.history-page) .mobile-nav > a[aria-current="page"]::after { transform:
 .history-card dt { color: #b7ae9e; font-size: 0.75rem; font-weight: 650; letter-spacing: 0.08em; text-transform: uppercase; }
 .history-card dd { margin: 0; font-size: 0.98rem; line-height: 1.45; }
 .history-card a { color: #e4c36a; }
-.system-panel { margin-top: 1.5rem; }
+/* Admin settings: a few plain cards */
+.settings { display: grid; gap: 1rem; max-width: 760px; }
+.settings h1 { margin: 0 0 0.25rem; font-size: 1.875rem; letter-spacing: -0.03em; }
+.set-card {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1.1rem 1.15rem 1.2rem;
+  border: 1px solid var(--color-line);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+}
+.set-card h2 { margin: 0; font-size: 1.15rem; }
+.set-card p { margin: 0; }
+.set-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.25rem 1rem; }
+.set-count { color: #cfc8b6; font-size: 0.92rem; }
+.set-count strong { color: #9be0b3; font-size: 1.05rem; }
+.set-grid { display: grid; gap: 0.8rem; }
+.set-grid textarea { min-height: 5.5rem; }
+.set-switch { display: inline-flex; align-items: center; gap: 0.6rem; font-weight: 600; min-height: 44px; }
+.set-switch input, .pay-row input { width: 22px; height: 22px; accent-color: #7fd39b; flex: none; }
+.set-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 1rem; }
+.set-actions .note { padding: 0.45rem 0.8rem; }
+.pay-list { list-style: none; margin: 0; padding: 0; display: grid; border-top: 1px solid var(--color-line); }
+.pay-row { display: flex; align-items: center; gap: 0.75rem; border-bottom: 1px solid var(--color-line); }
+.pay-row label { flex: 1; min-width: 0; display: flex; align-items: center; gap: 0.75rem; min-height: 52px; cursor: pointer; }
+.pay-row input:disabled { cursor: default; }
+.pay-name { font-weight: 600; overflow-wrap: anywhere; }
+.pay-batch { color: #a89f90; font-size: 0.85rem; white-space: nowrap; }
+.pay-state { flex: none; font-size: 0.82rem; font-weight: 700; color: #a89f90; }
+.pay-row.is-paid .pay-state { color: #9be0b3; }
+.award-row { display: grid; grid-template-columns: 1fr 7.5rem; gap: 0.5rem; }
+/* Floated so the legend is a grid item instead of sitting in the fieldset border. */
+.award-row legend { float: left; grid-column: 1 / -1; padding: 0; margin-bottom: 0.1rem; font-size: 0.92rem; }
+.award-row input:first-of-type { grid-column: 1 / -1; }
+.award-row > span:empty { display: none; }
+.set-danger summary { cursor: pointer; color: #f0b3a8; font-weight: 600; min-height: 44px; display: flex; align-items: center; }
+.set-danger[open] summary { margin-bottom: 0.6rem; }
+@media (min-width: 640px) {
+  .set-grid { grid-template-columns: 1fr 1fr; }
+  .set-grid .wide { grid-column: 1 / -1; }
+  .award-row { grid-template-columns: 10.5rem 1fr 1fr 7.5rem; align-items: center; }
+  .award-row legend { grid-column: 1; margin: 0; }
+  .award-row input:first-of-type { grid-column: auto; }
+  .award-row > span:empty { display: block; }
+}
 .admin-signin-shell { display: grid; min-height: 100vh; align-content: center; padding: 1.2rem; }
 .admin-signin { max-width: 28rem; margin: 0 auto; display: grid; gap: 0.8rem; }
 .admin-signin h1 { margin-bottom: 0; }
