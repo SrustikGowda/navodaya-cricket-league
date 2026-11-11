@@ -1893,6 +1893,8 @@ body:has(.history-page) .mobile-nav > a[aria-current="page"]::after { transform:
 .set-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.25rem 1rem; }
 .set-count { color: #cfc8b6; font-size: 0.92rem; }
 .set-count strong { color: #9be0b3; font-size: 1.05rem; }
+.set-sub { display: block; margin-top: 0.15rem; color: #a89f90; font-size: 0.8rem; }
+.set-head:has(.set-sub) { align-items: flex-start; }
 .set-grid { display: grid; gap: 0.8rem; }
 .set-grid textarea { min-height: 5.5rem; }
 .set-switch { display: inline-flex; align-items: center; gap: 0.6rem; font-weight: 600; min-height: 44px; }
