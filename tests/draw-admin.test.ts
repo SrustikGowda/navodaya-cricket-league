@@ -67,10 +67,13 @@ test("an organizer can tick a team's entry fee as paid, and it shows on the publ
   assert.deepEqual(audit.map((a) => a.action), ["payment.mark_paid", "payment.unmark_paid"]);
   const kept = await db.query<{ n: number }>("select count(*)::int as n from payment_attempts where registration_id = $1", [first.id]);
   assert.equal(kept[0]?.n, 1);
-  // The Settings list shows every approved team by name.
+  // The Settings list shows every approved team by name, oldest batch first.
   const list = await feeChecklist(db, (await getActiveSeason(db)).id);
   assert.equal(list.length, teams.length);
-  assert.deepEqual(list.map((row) => row.teamName), [...list.map((row) => row.teamName)].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase())));
+  const years = new Map((await db.query<{ id: string; a: number }>("select id, batch_admission_year as a from registrations")).map((row) => [row.id, row.a]));
+  const sequence = list.map((row) => years.get(row.id) as number);
+  assert.deepEqual(sequence, [...sequence].sort((a, b) => a - b), "oldest batch first");
+  assert.ok(new Set(sequence).size > 1, "the sample teams really do have different batches");
   await db.close();
 });
 

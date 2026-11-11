@@ -78,7 +78,15 @@ export type DrawPlan = {
   notes: string[];
 };
 
-export type PublicTeam = { id: string; name: string; slug: string | null; logoUrl: string | null };
+export type PublicTeam = {
+  id: string;
+  name: string;
+  slug: string | null;
+  logoUrl: string | null;
+  /** The years the team's batch joined and left school. Teams are listed oldest batch first. */
+  batchAdmissionYear: number | null;
+  batchLeavingYear: number | null;
+};
 
 /** Everything the page needs about a stored official draw. */
 export type OfficialDrawView = {

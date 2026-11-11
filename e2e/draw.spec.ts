@@ -156,6 +156,12 @@ test("the real run needs an organizer, the right password and a confirmation", a
   // Tapping a team shows its three matches, and the address is shareable.
   await page.getByRole("tab", { name: "Teams" }).click();
   await expect(page.locator(".dr-team .dr-match")).toHaveCount(3);
+  // Teams are listed oldest batch first, not alphabetically.
+  const picker = page.getByLabel("Choose a team").locator("option");
+  await expect(picker).toHaveCount(18);
+  await expect(picker.first()).toHaveText("4s-11 (2004–2011)");
+  await expect(picker.nth(1)).toHaveText("RCB United");
+  await expect(picker.last()).toHaveText("Hemavathi Hawks");
   await expect(page.getByRole("link", { name: "Share on WhatsApp" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Share image" })).toBeVisible();
   await expect(page).toHaveURL(/team=/);
@@ -178,6 +184,8 @@ test("an admin marks fees, picks the knockouts, enters awards, then deletes the 
   await page.goto("/admin/settings");
   const payments = page.locator("#payments");
   await expect(payments.getByRole("checkbox")).toHaveCount(18);
+  await expect(payments.locator(".pay-name").first()).toHaveText("4s-11 (2004–2011)");
+  await expect(payments.locator(".pay-name").last()).toHaveText("Hemavathi Hawks");
   const tick = payments.getByRole("checkbox", { name: /^4s-11/ });
   await tick.check();
   await expect(payments.locator(".pay-row.is-paid")).toHaveCount(1);
@@ -191,6 +199,9 @@ test("an admin marks fees, picks the knockouts, enters awards, then deletes the 
 
   // Knockouts: choose teams and winners for Sunday's matches. Winners fill the next round by themselves.
   await page.goto("/admin/draw");
+  const pickList = page.locator("form", { hasText: "#28" }).first().locator("select").nth(0).locator("option");
+  await expect(pickList.nth(1)).toHaveText("4s-11 (2004–2011)");
+  await expect(pickList.last()).toHaveText("Hemavathi Hawks");
   const save = async (match: string, teamA: string, teamB: string, winner: string | null) => {
     const form = page.locator("form", { hasText: match }).filter({ has: page.getByRole("button", { name: "Save" }) }).first();
     await form.locator("select").nth(0).selectOption({ label: teamA });

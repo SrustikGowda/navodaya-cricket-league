@@ -1,5 +1,6 @@
 import { DrawDesk } from "@/components/draw/draw-desk";
 import { getActor } from "@/lib/auth";
+import { compareBatch } from "@/lib/batch-order";
 import { getDb } from "@/lib/db";
 import { loadBoard } from "@/lib/draw/board";
 import { drawPasswordConfigured } from "@/lib/draw/service";
@@ -13,6 +14,8 @@ export default async function DrawAdminPage() {
   const board = await loadBoard(db);
   const official = board.official;
   const names = new Map((official?.plan.roster ?? []).map((team) => [team.id, team.name]));
+  const batches = new Map(board.teams.map((team) => [team.id, team]));
+  const batchKey = (team: { id: string; name: string }) => ({ name: team.name, admission: batches.get(team.id)?.batchAdmissionYear, leaving: batches.get(team.id)?.batchLeavingYear });
   const hash = official ? (await db.query<{ plan_hash: string }>("select plan_hash from draws where id = $1", [official.id]))[0]?.plan_hash ?? "" : "";
   const ties = (board.qualification?.blockingTies ?? []).map((tie) => ({
     ...tie,
@@ -24,7 +27,7 @@ export default async function DrawAdminPage() {
       fixtures={board.fixtures}
       ties={ties}
       leagueResults={board.qualification?.leagueMatchesPlayed ?? 0}
-      roster={[...(official?.plan.roster ?? [])].sort((a, b) => a.name.localeCompare(b.name))}
+      roster={[...(official?.plan.roster ?? [])].sort((a, b) => compareBatch(batchKey(a), batchKey(b)))}
       passwordConfigured={drawPasswordConfigured()}
     />
   );

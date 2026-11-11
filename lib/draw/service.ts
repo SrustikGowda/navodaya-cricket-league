@@ -45,10 +45,21 @@ export function seasonDays(season: Pick<Season, "startDate" | "endDate">): [stri
 }
 
 export async function publicTeams(db: Queryable, seasonId: string): Promise<PublicTeam[]> {
-  const rows = await db.query<Row>("select id, team_name, slug, logo_path from public_teams where season_id = $1", [seasonId]);
+  const rows = await db.query<Row>(
+    `select id, team_name, slug, logo_path, batch_admission_year, batch_leaving_year from public_teams where season_id = $1
+     order by batch_admission_year asc nulls last, batch_leaving_year asc nulls last, team_name`,
+    [seasonId],
+  );
   return rows.map((row) => {
     const logo = str(row, "logo_path")?.split(":").at(-1);
-    return { id: requiredStr(row, "id"), name: requiredStr(row, "team_name"), slug: str(row, "slug"), logoUrl: logo ? `/api/media/${logo}` : null };
+    return {
+      id: requiredStr(row, "id"),
+      name: requiredStr(row, "team_name"),
+      slug: str(row, "slug"),
+      logoUrl: logo ? `/api/media/${logo}` : null,
+      batchAdmissionYear: num(row, "batch_admission_year"),
+      batchLeavingYear: num(row, "batch_leaving_year"),
+    };
   });
 }
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { compareBatch } from "@/lib/batch-order";
 import { renderShareCard } from "@/lib/draw/share-image";
 import type { Qualification } from "@/lib/draw/standings";
 import type { DrawPlan, GroupCode, LiveFixture, PublicTeam } from "@/lib/draw/types";
@@ -78,7 +79,16 @@ export function ScheduleViews({
   const matches = useMemo(() => buildViewMatches(plan, fixtures), [plan, fixtures]);
   const names = useMemo(() => teamNames(plan), [plan]);
   const teamMap = useMemo(() => new Map(teams.map((team) => [team.id, team])), [teams]);
-  const orderedTeams = useMemo(() => [...plan.roster].sort((a, b) => a.name.localeCompare(b.name)), [plan]);
+  const orderedTeams = useMemo(
+    () =>
+      [...plan.roster].sort((a, b) =>
+        compareBatch(
+          { name: a.name, admission: teamMap.get(a.id)?.batchAdmissionYear, leaving: teamMap.get(a.id)?.batchLeavingYear },
+          { name: b.name, admission: teamMap.get(b.id)?.batchAdmissionYear, leaving: teamMap.get(b.id)?.batchLeavingYear },
+        ),
+      ),
+    [plan, teamMap],
+  );
 
   const resolveTeam = useCallback(
     (value: string | undefined): string => {
