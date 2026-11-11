@@ -13,6 +13,7 @@ export function FeeChecklist({ teams, fee }: { teams: FeeRow[]; fee: string | nu
   const [error, setError] = useState("");
   const due = teams.filter((team) => team.status !== "exempt");
   const paidCount = due.filter((team) => paid.has(team.id)).length;
+  const exemptCount = teams.length - due.length;
 
   const change = (ids: Set<string>, id: string, add: boolean) => {
     const next = new Set(ids);
@@ -43,6 +44,7 @@ export function FeeChecklist({ teams, fee }: { teams: FeeRow[]; fee: string | nu
         {fee && due.length > 0 ? (
           <p className="set-count">
             <strong>{paidCount}</strong> of {due.length} paid · {fee} per team
+            {exemptCount > 0 ? <span className="set-sub">{teams.length} teams in all. {exemptCount} {exemptCount === 1 ? "team does" : "teams do"} not pay (batch passed out in 2021 or later).</span> : null}
           </p>
         ) : null}
       </div>
