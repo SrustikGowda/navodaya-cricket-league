@@ -4,6 +4,7 @@ import Link from "next/link";
 import { PublicShell } from "@/components/shell";
 import { getDb } from "@/lib/db";
 import { formatIndianMobile } from "@/lib/format";
+import { FeeBadge } from "@/components/fee-badge";
 import { listPublicTeams } from "@/lib/public-data";
 
 export const metadata = { title: "Registered teams" };
@@ -45,7 +46,7 @@ export default async function TeamsPage() {
                       <Link className="tm-card" href={`/2026/teams/${team.slug}`}>
                         <span className="tm-top">
                           <span className="tm-batch">{batchLabel(team)}</span>
-                          {team.feePaid ? <span className="tm-paid">Fee paid</span> : null}
+                          <FeeBadge status={team.feeStatus} />
                           <span className="tm-arrow" aria-hidden="true">→</span>
                         </span>
                         <span className="tm-identity">
