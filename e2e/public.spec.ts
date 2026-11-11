@@ -42,7 +42,9 @@ test("organizer password opens the dashboard and a captain cannot", async ({ pag
   await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Registrations", exact: true })).toBeVisible();
   await page.getByRole("link", { name: "Settings", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "System" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Payments" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Payments", exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Account" }).click();
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page).toHaveURL(/\/2026/);

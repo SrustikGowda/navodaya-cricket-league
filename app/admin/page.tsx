@@ -2,20 +2,18 @@ import Link from "next/link";
 import { adminSnapshot } from "@/lib/admin-actions";
 import { getActor } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { formatInrFromPaise } from "@/lib/format";
-import { listAllPayments } from "@/lib/payments";
+import { feeChecklist } from "@/lib/payments";
 import { registrationAvailability } from "@/lib/season";
 
 export default async function AdminHome() {
   const actor = await getActor();
   if (!actor || actor.role !== "organizer") return null;
   const snapshot = await adminSnapshot(actor);
-  const payments = await listAllPayments(await getDb(), actor);
+  const fees = (await feeChecklist(await getDb(), snapshot.season.id)).filter((team) => team.status !== "exempt");
   const availability = registrationAvailability(snapshot.season);
   const pending = snapshot.registrations.filter((row) => row.status === "submitted");
   const approved = snapshot.registrations.filter((row) => row.status === "approved");
-  const awaiting = payments.filter((row) => row.status === "submitted");
-  const verifiedPaise = payments.filter((row) => row.status === "verified").reduce((sum, row) => sum + row.amountPaise, 0);
+  const paidFees = fees.filter((team) => team.status === "paid").length;
   const attention = [
     pending.length > 0
       ? {
@@ -24,16 +22,12 @@ export default async function AdminHome() {
           action: "Review",
         }
       : null,
-    snapshot.season.feePaise != null && snapshot.season.feePaise > 0 && !snapshot.season.feeDueAt
-      ? { href: "/admin/settings", text: "A fee is set, but the payment deadline is missing.", action: "Review" }
-      : null,
   ].filter((item): item is { href: string; text: string; action: string } => item != null);
   const cards = [
     { href: "/admin/registrations", value: String(snapshot.registrations.length), label: "Registrations", alert: false },
     { href: "/admin/registrations?status=submitted", value: String(pending.length), label: "Pending review", alert: pending.length > 0 },
     { href: "/admin/registrations?status=approved", value: String(approved.length), label: "Approved teams", alert: false },
-    { href: "/admin/payments?status=submitted", value: String(awaiting.length), label: "Payments to verify", alert: awaiting.length > 0 },
-    { href: "/admin/payments?status=verified", value: formatInrFromPaise(verifiedPaise), label: "Verified collections", alert: false },
+    { href: "/admin/settings#payments", value: `${paidFees}/${fees.length}`, label: "Entry fees paid", alert: false },
     { href: "/admin/fixtures", value: String(snapshot.published.length), label: "Published matches", alert: false },
   ];
 

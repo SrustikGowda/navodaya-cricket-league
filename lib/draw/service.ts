@@ -445,12 +445,11 @@ export async function drawResultCounts(db: Queryable, drawId: string): Promise<{
 export async function resetOfficialDraw(
   db: Db,
   actor: Actor,
-  input: { reason: string; confirmation: string; acknowledgeResults?: boolean },
+  input: { reason?: string | null; confirmation: string; acknowledgeResults?: boolean },
 ): Promise<{ ref: string; archivedResults: number }> {
   if (actor.role !== "organizer") throw new DomainError("Only an admin can delete the official run.", 403, "forbidden");
   if (input.confirmation.trim() !== RESET_PHRASE) throw new DomainError(`Type ${RESET_PHRASE} exactly to confirm.`, 422, "confirmation");
-  const reason = input.reason.trim();
-  if (reason.length < 10) throw new DomainError("Give a reason of at least 10 characters. It is kept in the audit log.", 422, "reason");
+  const reason = input.reason?.trim().slice(0, 300) || "Deleted in Settings to redo the Real Run.";
   const outcome = await db.tx(async (query) => {
     const season = await lockActiveSeason(query);
     const rows = await query.query<Row>("select * from draws where season_id = $1 and status = 'published' for update", [season.id]);

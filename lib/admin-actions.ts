@@ -68,7 +68,7 @@ export async function adminAction(actor: Actor, body: Record<string, unknown>) {
   if (action === "override-squad") {
     return { registration: await overrideSquad(db, actor, String(body.id), players(body.players), String(body.reason ?? "")) };
   }
-  if (action === "fee-paid") return { status: await setFeePaid(db, actor, String(body.registrationId), body.paid === true, typeof body.note === "string" ? body.note : null) };
+  if (action === "fee-paid") return { status: await setFeePaid(db, actor, String(body.registrationId), body.paid === true) };
   if (action === "verify-payment") return { payment: await verifyPayment(db, actor, String(body.attemptId)) };
   if (action === "reject-payment") return { payment: await rejectPayment(db, actor, String(body.attemptId), String(body.reason ?? "")) };
   if (action === "refund") {

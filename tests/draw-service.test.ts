@@ -282,11 +282,10 @@ test("the real run refuses a bad roster, a missing seeded team, a manual schedul
   await db3.close();
 });
 
-test("deleting the official run needs the phrase and a reason, is audited, keeps history, and asks before taking results off the site", async () => {
+test("deleting the official run needs the phrase, is audited, keeps history, and asks before taking results off the site", async () => {
   const { db, admin } = await setup();
   const first = await runOfficialDraw(db, admin, { requestId: nextRequest() });
   await assert.rejects(() => resetOfficialDraw(db, admin, { reason: "Wrong roster at the draw", confirmation: "reset" }), (e) => codeOf(e) === "confirmation");
-  await assert.rejects(() => resetOfficialDraw(db, admin, { reason: "short", confirmation: RESET_PHRASE }), (e) => codeOf(e) === "reason");
   const player = await captain(db);
   await assert.rejects(() => resetOfficialDraw(db, player, { reason: "Not allowed at all", confirmation: RESET_PHRASE }), (e) => codeOf(e) === "forbidden");
   assert.ok(await getOfficialDraw(db), "still published after refused resets");

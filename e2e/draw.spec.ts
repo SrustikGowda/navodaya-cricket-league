@@ -174,11 +174,17 @@ test("an admin marks fees, picks the knockouts, enters awards, then deletes the 
   test.skip(testInfo.project.name !== "desktop", "Runs once, after the official draw.");
   expect((await page.request.post("/api/admin/password", { data: { password: "playwright-admin" } })).status()).toBe(200);
 
-  // Entry fee: mark paid on the admin card, and it shows on the public team card.
-  await page.goto("/admin/registrations?q=4s-11");
-  const card = page.locator("article.section").first();
-  await card.getByRole("button", { name: "Mark entry fee paid" }).click();
-  await expect(card.locator(".fee-line")).toContainText("Paid");
+  // Entry fee: tick the team in Settings › Payments, and it shows on the public team card.
+  await page.goto("/admin/settings");
+  const payments = page.locator("#payments");
+  await expect(payments.getByRole("checkbox")).toHaveCount(18);
+  const tick = payments.getByRole("checkbox", { name: /^4s-11/ });
+  await tick.check();
+  await expect(payments.locator(".pay-row.is-paid")).toHaveCount(1);
+  await expect(payments.locator(".set-count")).toContainText(/^1 of 16 paid/);
+  await expect(payments.locator(".pay-row", { hasText: "No fee" })).toHaveCount(2);
+  await page.reload();
+  await expect(page.locator("#payments").getByRole("checkbox", { name: /^4s-11/ })).toBeChecked();
   await page.goto("/2026/teams");
   await expect(page.locator(".tm-card .tm-paid")).toHaveCount(1);
   await expect(page.locator(".tm-card", { has: page.locator(".tm-paid") })).toContainText("4s-11");
@@ -217,25 +223,24 @@ test("an admin marks fees, picks the knockouts, enters awards, then deletes the 
   // Awards typed in settings show up there as well.
   await page.goto("/admin/settings");
   const awards = page.locator("#awards");
-  const batter = awards.locator("fieldset", { hasText: "Best batter" }).locator("input");
-  await batter.nth(0).fill("Praveen G J");
-  await batter.nth(1).fill("GTR");
-  await batter.nth(2).fill("122");
+  await awards.getByLabel("Best batter: player").fill("Praveen G J");
+  await awards.getByLabel("Best batter: team").fill("GTR");
+  await awards.getByLabel("Best batter: runs").fill("122");
   await awards.getByRole("button", { name: "Save awards" }).click();
-  await expect(awards.getByText("Saved. The History page is updated.")).toBeVisible();
+  await expect(awards.getByText("Saved.")).toBeVisible();
   await page.goto("/history?year=2026");
   await expect(page.locator(".hall-standouts")).toContainText("Praveen G J");
 
-  // Deleting the run is an admin action in settings. With results it needs an explicit tick.
+  // Deleting the run is an admin action in settings: the draw password and the typed phrase.
   await page.goto("/admin/settings");
   const run = page.locator("#official-run");
   await run.locator("summary").click();
+  await expect(run.getByText(/results come off the site/)).toBeVisible();
   await run.locator("input[name=password]").fill("e2e-draw-password");
-  await run.locator("input[name=confirmation]").fill("DELETE NCL 2026 DRAW");
-  await run.locator("input[name=reason]").fill("Redoing the draw after a roster change");
+  await run.locator("input[name=confirmation]").fill("WRONG PHRASE");
   await run.getByRole("button", { name: "Delete the official run" }).click();
-  await expect(run.getByText(/have a result|has a result/)).toBeVisible();
-  await run.getByRole("checkbox").check();
+  await expect(run.getByRole("alert")).toContainText("exactly");
+  await run.locator("input[name=confirmation]").fill("DELETE NCL 2026 DRAW");
   await run.getByRole("button", { name: "Delete the official run" }).click();
   await expect(run.getByText(/was deleted/)).toBeVisible();
 

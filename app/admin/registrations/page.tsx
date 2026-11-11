@@ -1,10 +1,7 @@
-import { FeePaid } from "@/components/fee-paid";
 import { RegistrationReview } from "@/components/registration-review";
 import { adminSnapshot } from "@/lib/admin-actions";
 import { getActor } from "@/lib/auth";
-import { getDb } from "@/lib/db";
 import { formatInrFromPaise, formatIst } from "@/lib/format";
-import { feeStatuses } from "@/lib/payments";
 
 const STATUS_LABELS: Record<string, string> = {
   draft: "Draft",
@@ -20,8 +17,7 @@ export default async function RegistrationsPage({ searchParams }: { searchParams
   const actor = await getActor();
   if (!actor || actor.role !== "organizer") return null;
   const filters = await searchParams;
-  const { registrations, season } = await adminSnapshot(actor);
-  const fees = await feeStatuses(await getDb(), season.id);
+  const { registrations } = await adminSnapshot(actor);
   const shown = registrations.filter((registration) => {
     if (filters.status && registration.status !== filters.status) return false;
     if (filters.q && !`${registration.teamName} ${registration.captainName} ${registration.captainEmail} ${registration.reference ?? ""}`.toLowerCase().includes(filters.q.toLowerCase())) return false;
@@ -59,7 +55,6 @@ export default async function RegistrationsPage({ searchParams }: { searchParams
             {registration.feeConsent && registration.feeConsentPaise != null ? ` for ${formatInrFromPaise(registration.feeConsentPaise)}` : ""}
             {registration.feeConsentDueAt ? `, due ${formatIst(registration.feeConsentDueAt)}` : ""}.
           </p>
-          {registration.status === "approved" ? <FeePaid registrationId={registration.id} teamName={registration.teamName} status={fees.get(registration.id) ?? "none"} /> : null}
           {registration.reviewReason ? <p>Last note: {registration.reviewReason}</p> : null}
           {registration.nameReviewRequired ? <p>Name review required.</p> : null}
           {registration.players.length > 0 ? (

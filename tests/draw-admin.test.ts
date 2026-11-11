@@ -5,7 +5,7 @@ import { saveAwards, syncEditionHistory } from "../lib/draw/history";
 import { setKnockoutMatch } from "../lib/draw/knockouts";
 import { parseScoreEntry, recordMatchScore } from "../lib/draw/results";
 import { getOfficialDraw, resetOfficialDraw, RESET_PHRASE, runOfficialDraw } from "../lib/draw/service";
-import { feeStatuses, setFeePaid } from "../lib/payments";
+import { feeChecklist, feeStatuses, setFeePaid } from "../lib/payments";
 import { listArchive } from "../lib/content";
 import { toHallEdition } from "../lib/hall";
 import { listPublicFixtures, listPublicTeams } from "../lib/public-data";
@@ -44,31 +44,37 @@ async function fresh() {
   return { db, admin, teams, id };
 }
 
-test("an organizer can mark a team's entry fee paid, and it shows on the public team card", async () => {
+test("an organizer can tick a team's entry fee as paid, and it shows on the public team card", async () => {
   const { db, admin, teams } = await fresh();
   const [first, second] = teams as [{ id: string; name: string }, { id: string; name: string }];
   await withFee(db, 400_000);
   assert.equal((await listPublicTeams(db)).every((team) => team.feePaid === false), true);
   assert.equal((await feeStatuses(db, (await getActiveSeason(db)).id)).get(first.id), "unpaid");
 
-  assert.equal(await setFeePaid(db, admin, first.id, true, "Paid in cash at the ground"), "paid");
+  assert.equal(await setFeePaid(db, admin, first.id, true), "paid");
   assert.equal(await setFeePaid(db, admin, first.id, true), "paid", "marking twice does not double-count");
   const count = await db.query<{ n: number }>("select count(*)::int as n from payment_attempts where registration_id = $1 and status = 'verified'", [first.id]);
   assert.equal(count[0]?.n, 1);
   const teamsNow = await listPublicTeams(db);
   assert.equal(teamsNow.find((t) => t.id === first.id)?.feePaid, true);
   assert.equal(teamsNow.find((t) => t.id === second.id)?.feePaid, false);
-  assert.equal(JSON.stringify(teamsNow).includes("Paid in cash"), false, "the note stays private");
 
-  // Taking an organizer's own mark back works; the audit trail records both.
-  assert.equal(await setFeePaid(db, admin, first.id, false, "Entered on the wrong team"), "unpaid");
+  // Unticking works; the audit trail records both, and the old record is kept.
+  assert.equal(await setFeePaid(db, admin, first.id, false), "unpaid");
+  assert.equal(await setFeePaid(db, admin, first.id, false), "unpaid", "unticking twice is harmless");
   assert.equal((await listPublicTeams(db)).find((t) => t.id === first.id)?.feePaid, false);
   const audit = await db.query<{ action: string }>("select action from audit_events where action in ('payment.mark_paid','payment.unmark_paid') order by created_at");
   assert.deepEqual(audit.map((a) => a.action), ["payment.mark_paid", "payment.unmark_paid"]);
+  const kept = await db.query<{ n: number }>("select count(*)::int as n from payment_attempts where registration_id = $1", [first.id]);
+  assert.equal(kept[0]?.n, 1);
+  // The Settings list shows every approved team by name.
+  const list = await feeChecklist(db, (await getActiveSeason(db)).id);
+  assert.equal(list.length, teams.length);
+  assert.deepEqual(list.map((row) => row.teamName), [...list.map((row) => row.teamName)].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase())));
   await db.close();
 });
 
-test("fee marks respect exemptions, a missing fee, UPI payments and permissions", async () => {
+test("fee ticks respect exemptions, a missing fee, older payment records and permissions", async () => {
   const { db, admin, teams } = await fresh();
   const [first, second] = teams as unknown as [{ id: string }, { id: string }];
   const player = await captain(db);
@@ -82,15 +88,16 @@ test("fee marks respect exemptions, a missing fee, UPI payments and permissions"
   assert.equal((await feeStatuses(db, (await getActiveSeason(db)).id)).get(second.id), "exempt");
   await assert.rejects(() => setFeePaid(db, admin, second.id, true), (e) => code(e) === "exempt");
 
-  // A captain's submitted UPI reference is verified, not duplicated, and cannot be "unmarked" (that needs a refund).
+  // An older verified payment record counts as paid, and the box can still be unticked.
   await db.execute(
-    "insert into payment_attempts (season_id, registration_id, amount_paise, transaction_reference, status) select season_id, id, 400000, 'UPI123456', 'submitted' from registrations where id = $1",
+    "insert into payment_attempts (season_id, registration_id, amount_paise, transaction_reference, status, verified_at) select season_id, id, 400000, 'UPI123456', 'verified', now() from registrations where id = $1",
     [first.id],
   );
+  assert.equal((await feeStatuses(db, (await getActiveSeason(db)).id)).get(first.id), "paid");
   assert.equal(await setFeePaid(db, admin, first.id, true), "paid");
   const attempts = await db.query<{ n: number }>("select count(*)::int as n from payment_attempts where registration_id = $1", [first.id]);
-  assert.equal(attempts[0]?.n, 1);
-  await assert.rejects(() => setFeePaid(db, admin, first.id, false), (e) => code(e) === "has_reference");
+  assert.equal(attempts[0]?.n, 1, "ticking a paid team adds nothing");
+  assert.equal(await setFeePaid(db, admin, first.id, false), "unpaid");
 
   await db.execute("update registrations set status = 'submitted' where id = $1", [first.id]);
   await assert.rejects(() => setFeePaid(db, admin, first.id, true), (e) => code(e) === "not_approved");
@@ -266,7 +273,6 @@ test("an admin can delete the official run, with results only after they confirm
   const player = await captain(db);
   const first = await getOfficialDraw(db);
   await assert.rejects(() => resetOfficialDraw(db, player, { reason: "I would like to redo it", confirmation: RESET_PHRASE }), (e) => code(e) === "forbidden");
-  await assert.rejects(() => resetOfficialDraw(db, admin, { reason: "short", confirmation: RESET_PHRASE }), (e) => code(e) === "reason");
   await assert.rejects(() => resetOfficialDraw(db, admin, { reason: "A long enough reason", confirmation: "delete" }), (e) => code(e) === "confirmation");
 
   // With a recorded result, deleting needs an explicit tick and keeps the data.
@@ -301,7 +307,10 @@ test("deleting the official run also removes the History entry it created", asyn
   const { t, afterSf } = await playToFinal(ctx);
   await setKnockoutMatch(db, admin, afterSf.get("F").id, { teamAId: t[0] as string, teamBId: t[6] as string, winner: "a" });
   assert.ok((await listArchive(db)).some((e) => e.editionNumber === season.editionNumber));
-  await resetOfficialDraw(db, admin, { reason: "Redoing the whole draw", confirmation: RESET_PHRASE, acknowledgeResults: true });
+  // The reason is optional; a default goes in the audit log.
+  await resetOfficialDraw(db, admin, { confirmation: RESET_PHRASE, acknowledgeResults: true });
+  const audit = await db.query<{ payload: unknown }>("select payload from audit_events where action = 'draw.reset'");
+  assert.match(JSON.stringify(audit[0]?.payload), /redo the Real Run/);
   clearReadCache();
   assert.equal((await listArchive(db)).some((e) => e.editionNumber === season.editionNumber), false);
   await db.close();

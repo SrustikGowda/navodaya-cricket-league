@@ -5,10 +5,17 @@ import { useState } from "react";
 import { istParts, parseIstInput } from "@/lib/format";
 import { postJson } from "./post-json";
 
-export function SettingsForm({ version, values }: { version: number; values: Record<string, string | number | boolean | null> }) {
+type Values = Record<string, string | number | boolean | null>;
+
+/**
+ * The few season details organizers change. Fields left out here (fee deadline, waitlist, one team per batch, CricHeroes
+ * link) keep whatever value they already have, because only the keys sent are saved.
+ */
+export function SettingsForm({ version, values }: { version: number; values: Values }) {
   const router = useRouter();
   const [error, setError] = useState("");
   const [saved, setSaved] = useState("");
+  const [pending, setPending] = useState(false);
   const [registrationOpen, setRegistrationOpen] = useState(values.registrationAnnounced === true);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -16,98 +23,120 @@ export function SettingsForm({ version, values }: { version: number; values: Rec
     setError("");
     setSaved("");
     const form = new FormData(event.currentTarget);
-    const text = (name: string) => {
-      const value = String(form.get(name) ?? "").trim();
-      return value ? value : null;
-    };
-    const instant = (name: string) => {
-      const value = String(form.get(name) ?? "").trim();
-      if (!value) return null;
-      const parsed = parseIstInput(value);
-      if (!parsed) throw new Error(`${name} must be an IST time such as 2026-10-01 10:00.`);
-      return parsed;
-    };
-    const rupeesToPaise = (name: string) => {
-      const value = String(form.get(name) ?? "").trim();
-      if (value === "") return null;
-      const rupees = Number(value);
-      if (!Number.isFinite(rupees) || rupees < 0) throw new Error("Enter the entry fee in rupees, or leave it blank.");
-      return Math.round(rupees * 100);
-    };
+    const text = (name: string) => String(form.get(name) ?? "").trim() || null;
     try {
+      const closes = String(form.get("registrationClosesAt") ?? "").trim();
+      const closesAt = closes ? parseIstInput(closes) : null;
+      if (closes && !closesAt) throw new Error("Registration closes must be a date and time.");
+      const fee = String(form.get("fee") ?? "").trim();
+      const rupees = fee === "" ? null : Number(fee);
+      if (rupees != null && (!Number.isFinite(rupees) || rupees < 0)) throw new Error("Enter the entry fee in rupees, or leave it blank.");
+      setPending(true);
       await postJson("/api/admin", {
         action: "settings",
         version,
         patch: {
-          venueName: String(form.get("venueName") ?? ""),
-          venueAddress: String(form.get("venueAddress") ?? ""),
-          mapsUrl: text("mapsUrl"),
-          registrationClosesAt: instant("registrationClosesAt"),
           registrationAnnounced: form.get("registrationAnnounced") === "on",
+          ...(registrationOpen ? { registrationClosesAt: closesAt } : {}),
           startDate: String(form.get("startDate") ?? ""),
           endDate: String(form.get("endDate") ?? ""),
           fixturesOn: text("fixturesOn"),
-          feePaise: rupeesToPaise("feePaise"),
-          feeDueAt: instant("feeDueAt"),
-          rulesText: text("rulesText"),
+          venueName: String(form.get("venueName") ?? ""),
+          venueAddress: String(form.get("venueAddress") ?? ""),
+          mapsUrl: text("mapsUrl"),
+          feePaise: rupees == null ? null : Math.round(rupees * 100),
           contactName: text("contactName"),
-          contactEmail: text("contactEmail"),
           contactPhone: text("contactPhone"),
-          cricheroesTournamentUrl: text("cricheroesTournamentUrl"),
-          oneTeamPerBatch: form.get("oneTeamPerBatch") === "on",
-          waitlistEnabled: form.get("waitlistEnabled") === "on",
+          contactEmail: text("contactEmail"),
+          rulesText: text("rulesText"),
         },
       });
-      setSaved("Settings saved.");
+      setSaved("Saved.");
       router.refresh();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Settings were not saved.");
+    } finally {
+      setPending(false);
     }
   }
 
-  const fields: [string, string][] = [
-    ["venueName", "Venue name"],
-    ["venueAddress", "Address"],
-    ["mapsUrl", "Verified map link"],
-    ["registrationClosesAt", "Registration closes"],
-    ["startDate", "Match start date"],
-    ["endDate", "Match end date"],
-    ["fixturesOn", "Fixtures date"],
-    ["feePaise", "Entry fee in rupees, blank if undecided, 0 if free"],
-    ["feeDueAt", "Registration fee due, IST"],
-    ["contactName", "Contact name"],
-    ["contactEmail", "Contact email"],
-    ["contactPhone", "Contact phone"],
-    ["cricheroesTournamentUrl", "CricHeroes tournament URL"],
-  ];
-
-  const timeFields = new Set(["registrationClosesAt", "feeDueAt"]);
-  const dateFields = new Set(["startDate", "endDate", "fixturesOn"]);
-  const registrationDates = new Set(["registrationClosesAt"]);
+  const value = (name: string) => (values[name] == null ? "" : String(values[name]));
+  const day = (name: string) => value(name).slice(0, 10);
 
   return (
-    <form className="stack" onSubmit={submit}>
-      <label>
-        <input type="checkbox" name="registrationAnnounced" checked={registrationOpen} onChange={(event) => setRegistrationOpen(event.target.checked)} /> Open registration
+    <form className="set-card" id="season" onSubmit={submit}>
+      <h2>Season</h2>
+      <label className="set-switch">
+        <input type="checkbox" name="registrationAnnounced" checked={registrationOpen} onChange={(event) => setRegistrationOpen(event.target.checked)} />
+        Registration open
       </label>
-      <p className="quiet">{registrationOpen ? "Set the close date. Registration stays open until then." : "Registration stays on “opens soon” until this is turned on."}</p>
-      {fields.map(([name, label]) => (
-        <label key={name} className="field" hidden={!registrationOpen && registrationDates.has(name)}>{label}
-          <input
-            className="text-input"
-            name={name}
-            type={timeFields.has(name) ? "datetime-local" : dateFields.has(name) ? "date" : "text"}
-            required={name === "startDate" || name === "endDate"}
-            defaultValue={timeFields.has(name) ? istDatetimeLocal(values[name]) : name === "feePaise" ? rupeeField(values[name]) : values[name] == null ? "" : String(values[name]).slice(0, dateFields.has(name) ? 10 : undefined)}
-          />
+      <div className="set-grid">
+        {registrationOpen ? (
+          <label className="field wide">
+            Registration closes (IST)
+            <input className="text-input" name="registrationClosesAt" type="datetime-local" defaultValue={istDatetimeLocal(values.registrationClosesAt)} />
+          </label>
+        ) : null}
+        <label className="field">
+          First match day
+          <input className="text-input" name="startDate" type="date" required defaultValue={day("startDate")} />
         </label>
-      ))}
-      <label className="field">Rules text<textarea name="rulesText" defaultValue={values.rulesText == null ? "" : String(values.rulesText)} /></label>
-      <label><input type="checkbox" name="waitlistEnabled" defaultChecked={values.waitlistEnabled === true} /> Enable waitlist when the approved limit is reached</label>
-      <label><input type="checkbox" name="oneTeamPerBatch" defaultChecked={values.oneTeamPerBatch === true} /> Limit the season to one active team per batch</label>
-      <button className="button" type="submit">Save settings</button>
-      {saved ? <p className="note" role="status">{saved}</p> : null}
-      {error ? <p className="alert" role="alert">{error}</p> : null}
+        <label className="field">
+          Last match day
+          <input className="text-input" name="endDate" type="date" required defaultValue={day("endDate")} />
+        </label>
+        <label className="field">
+          Fixtures published on
+          <input className="text-input" name="fixturesOn" type="date" defaultValue={day("fixturesOn")} />
+        </label>
+        <label className="field">
+          Entry fee per team (₹)
+          <input className="text-input" name="fee" inputMode="numeric" placeholder="Blank if not decided" defaultValue={rupeeField(values.feePaise)} />
+        </label>
+        <label className="field">
+          Venue
+          <input className="text-input" name="venueName" defaultValue={value("venueName")} />
+        </label>
+        <label className="field">
+          Google Maps link
+          <input className="text-input" name="mapsUrl" type="url" defaultValue={value("mapsUrl")} />
+        </label>
+        <label className="field wide">
+          Address
+          <input className="text-input" name="venueAddress" defaultValue={value("venueAddress")} />
+        </label>
+        <label className="field">
+          Contact name
+          <input className="text-input" name="contactName" defaultValue={value("contactName")} />
+        </label>
+        <label className="field">
+          Contact phone
+          <input className="text-input" name="contactPhone" type="tel" defaultValue={value("contactPhone")} />
+        </label>
+        <label className="field wide">
+          Contact email
+          <input className="text-input" name="contactEmail" type="email" defaultValue={value("contactEmail")} />
+        </label>
+        <label className="field wide">
+          Rules (shown on the Rules page)
+          <textarea name="rulesText" rows={4} defaultValue={value("rulesText")} />
+        </label>
+      </div>
+      <div className="set-actions">
+        <button className="button" type="submit" disabled={pending}>
+          {pending ? "Saving" : "Save"}
+        </button>
+        {saved ? (
+          <p className="note" role="status">
+            {saved}
+          </p>
+        ) : null}
+      </div>
+      {error ? (
+        <p className="alert" role="alert">
+          {error}
+        </p>
+      ) : null}
     </form>
   );
 }
