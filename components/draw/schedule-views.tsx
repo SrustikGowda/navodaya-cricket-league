@@ -1,30 +1,33 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { compareBatch } from "@/lib/batch-order";
+import { BYE_RULES, KNOCKOUT_TIE_RULE, LEAGUE_MATCHES, QUALIFICATION_RULES, TIE_BREAKERS, type Timetable } from "@/lib/draw/config";
 import { renderShareCard } from "@/lib/draw/share-image";
 import type { Qualification } from "@/lib/draw/standings";
 import type { DrawPlan, GroupCode, LiveFixture, PublicTeam } from "@/lib/draw/types";
 import {
+  buildViewBye,
   buildViewMatches,
   DAY_LABEL,
-  leagueMatchesOf,
   opponentOf,
   SEED_TEXT,
   slotCodeOf,
   slotOf,
   STAGE_LABEL,
+  teamEntries,
   teamNames,
   timeText,
+  type ViewBye,
   type ViewMatch,
 } from "@/lib/draw/view";
 import { Bracket } from "./bracket";
-import { MatchCard } from "./match-card";
+import { GroupCards, GroupPanel } from "./group-views";
+import { ByeCard, MatchCard } from "./match-card";
 import { StandingsBoard } from "./standings-board";
 import { TeamMark } from "./team-mark";
 
-type TabId = "schedule" | "groups" | "teams" | "bracket" | "standings";
-type DayChoice = "1" | "2" | "both";
+type TabId = "day1" | "day2" | "groupA" | "groupB" | "knockouts" | "team" | "standings";
 
 export type InitialView = { tab?: string; team?: string; day?: string; stage?: string; ground?: string; group?: string };
 
@@ -32,10 +35,11 @@ type Filters = { team: string; group: string; stage: string; ground: string };
 const EMPTY: Filters = { team: "", group: "", stage: "", ground: "" };
 
 const DATES: Record<1 | 2, string> = { 1: "28 November", 2: "29 November" };
+const TAB_KEY: Record<TabId, string> = { day1: "day1", day2: "day2", groupA: "a", groupB: "b", knockouts: "knockouts", team: "team", standings: "standings" };
 
-function applyFilters(matches: ViewMatch[], f: Filters, day: DayChoice): ViewMatch[] {
+function applyFilters(matches: ViewMatch[], f: Filters, day: 1 | 2): ViewMatch[] {
   return matches.filter((m) => {
-    if (day !== "both" && String(m.day) !== day) return false;
+    if (m.day !== day) return false;
     if (f.team && m.a.teamId !== f.team && m.b.teamId !== f.team) return false;
     if (f.group === "KO" ? m.stage === "league" : f.group && m.group !== f.group) return false;
     if (f.stage && m.stage !== f.stage) return false;
@@ -45,17 +49,18 @@ function applyFilters(matches: ViewMatch[], f: Filters, day: DayChoice): ViewMat
 }
 
 function startTab(initial: InitialView | undefined, official: boolean): TabId {
-  const tab = initial?.tab;
-  if (tab === "groups" || tab === "teams" || tab === "bracket" || (tab === "standings" && official)) return tab;
-  if (!tab && initial?.team) return "teams";
-  return "schedule";
-}
-
-function startDay(initial: InitialView | undefined): DayChoice {
-  const value = initial?.day ?? initial?.tab;
-  if (value === "2026-11-29" || value === "2" || value === "sunday") return "2";
-  if (value === "both" || value === "all") return "both";
-  return "1";
+  const tab = (initial?.tab ?? "").toLowerCase();
+  if (tab === "day1" || tab === "day2" || tab === "knockouts" || tab === "team") return tab;
+  if (tab === "a" || tab === "groupa" || tab === "groups") return "groupA";
+  if (tab === "b" || tab === "groupb") return "groupB";
+  if (tab === "bracket") return "knockouts";
+  if (tab === "teams") return "team";
+  if (tab === "standings" && official) return "standings";
+  if (!tab && initial?.team) return "team";
+  if (!tab && (initial?.group === "A" || initial?.group === "B")) return initial.group === "A" ? "groupA" : "groupB";
+  const day = initial?.day;
+  if (day === "2026-11-29" || day === "2" || day === "sunday") return "day2";
+  return "day1";
 }
 
 export function ScheduleViews({
@@ -66,6 +71,8 @@ export function ScheduleViews({
   teams,
   drawRef,
   initial,
+  timetable,
+  confirmedAt,
 }: {
   kind: "official" | "trial";
   plan: DrawPlan;
@@ -74,11 +81,15 @@ export function ScheduleViews({
   teams: PublicTeam[];
   drawRef?: string | null;
   initial?: InitialView;
+  timetable?: Timetable;
+  confirmedAt?: string | null;
 }) {
   const official = kind === "official";
   const matches = useMemo(() => buildViewMatches(plan, fixtures), [plan, fixtures]);
+  const bye = useMemo(() => buildViewBye(plan, fixtures), [plan, fixtures]);
   const names = useMemo(() => teamNames(plan), [plan]);
   const teamMap = useMemo(() => new Map(teams.map((team) => [team.id, team])), [teams]);
+  // Oldest batch first, the same order as the Teams page.
   const orderedTeams = useMemo(
     () =>
       [...plan.roster].sort((a, b) =>
@@ -100,25 +111,19 @@ export function ScheduleViews({
     [plan, teamMap],
   );
 
-  // Phones get shorter labels so all five tabs fit without a hidden one off-screen.
   const tabs: { id: TabId; label: string; short: string }[] = [
-    { id: "schedule", label: "Schedule", short: "Schedule" },
-    { id: "groups", label: "Groups", short: "Groups" },
-    { id: "teams", label: "Teams", short: "Teams" },
-    { id: "bracket", label: "Knockouts", short: "Bracket" },
+    { id: "day1", label: "Day 1 · Saturday", short: "Day 1" },
+    { id: "day2", label: "Day 2 · Sunday", short: "Day 2" },
+    { id: "groupA", label: "Group A", short: "Group A" },
+    { id: "groupB", label: "Group B", short: "Group B" },
+    { id: "knockouts", label: "Knockouts", short: "Knockouts" },
+    { id: "team", label: "My team", short: "My team" },
     ...(official ? [{ id: "standings" as const, label: "Standings", short: "Table" }] : []),
   ];
   const [tab, setTab] = useState<TabId>(startTab(initial, official));
-  const [day, setDay] = useState<DayChoice>(startDay(initial));
-  const [filters, setFilters] = useState<Filters>({
-    ...EMPTY,
-    group: initial?.group ?? "",
-    stage: initial?.stage ?? "",
-    ground: initial?.ground ?? "",
-  });
-  const [moreFilters, setMoreFilters] = useState(Boolean(initial?.group || initial?.stage || initial?.ground));
+  const [filters, setFilters] = useState<Filters>({ ...EMPTY, group: initial?.group === "KO" ? "KO" : "", stage: initial?.stage ?? "", ground: initial?.ground ?? "" });
+  const [moreFilters, setMoreFilters] = useState(Boolean(initial?.stage || initial?.ground));
   const [team, setTeam] = useState<string>(resolveTeam(initial?.team) || (orderedTeams[0]?.id ?? ""));
-  const [group, setGroup] = useState<GroupCode>("A");
   const rootRef = useRef<HTMLDivElement>(null);
 
   // Keep the address shareable (official only): the open tab and team survive a copy-paste.
@@ -126,79 +131,105 @@ export function ScheduleViews({
     if (!official) return;
     const url = new URL(window.location.href);
     for (const key of ["day", "stage", "ground", "group", "team", "tab"]) url.searchParams.delete(key);
-    if (tab === "teams" && team) url.searchParams.set("team", teamMap.get(team)?.slug ?? team);
-    else if (tab !== "schedule") url.searchParams.set("tab", tab);
-    else if (day !== "1") url.searchParams.set("day", day === "2" ? "2026-11-29" : "both");
+    if (tab === "team" && team) url.searchParams.set("team", teamMap.get(team)?.slug ?? team);
+    else if (tab !== "day1") url.searchParams.set("tab", TAB_KEY[tab]);
     window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
-  }, [official, tab, team, day, teamMap]);
+  }, [official, tab, team, teamMap]);
 
   const openTeam = useCallback((teamId: string) => {
     setTeam(teamId);
-    setTab("teams");
+    setTab("team");
+    window.requestAnimationFrame(() => rootRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }, []);
+  const openGroup = useCallback((group: GroupCode) => {
+    setTab(group === "A" ? "groupA" : "groupB");
     window.requestAnimationFrame(() => rootRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
   }, []);
 
+  const day: 1 | 2 = tab === "day2" ? 2 : 1;
   const listed = useMemo(() => applyFilters(matches, filters, day), [matches, filters, day]);
   const extraCount = [filters.group, filters.stage, filters.ground].filter(Boolean).length;
   const set = (key: keyof Filters) => (event: React.ChangeEvent<HTMLSelectElement>) => setFilters((current) => ({ ...current, [key]: event.target.value }));
+  const [exporting, setExporting] = useState<"png" | "pdf" | null>(null);
+  const [exportNote, setExportNote] = useState("");
+
+  async function exportSheet(format: "png" | "pdf") {
+    setExporting(format);
+    setExportNote("");
+    try {
+      const { downloadSheet } = await import("@/lib/draw/export-sheet");
+      await downloadSheet(format, { plan, matches, bye, official, drawRef: drawRef ?? null, names });
+      setExportNote(format === "png" ? "Image saved." : "PDF saved.");
+    } catch (error) {
+      setExportNote(error instanceof Error ? error.message : "The file could not be created.");
+    } finally {
+      setExporting(null);
+    }
+  }
 
   return (
     <div className={official ? "dr-views" : "dr-views dr-views--trial"} ref={rootRef} id="dr-views" data-ref={drawRef ?? undefined}>
-      <div className="dr-tabs" role="tablist" aria-label="Fixture views">
-        {tabs.map((item) => (
-          <button
-            key={item.id}
-            role="tab"
-            type="button"
-            id={`dr-tab-${item.id}`}
-            aria-selected={tab === item.id}
-            aria-controls="dr-panel"
-            className={tab === item.id ? "is-active" : undefined}
-            onClick={() => setTab(item.id)}
-            aria-label={item.label}
-          >
-            <span className="dr-tab-long">{item.label}</span>
-            <span className="dr-tab-short" aria-hidden="true">
-              {item.short}
-            </span>
+      <GroupCards plan={plan} teams={teamMap} onTeam={openTeam} onGroup={openGroup} />
+
+      <div className="dr-views-bar">
+        <div className="dr-tabs" role="tablist" aria-label="Fixture views">
+          {tabs.map((item) => (
+            <button
+              key={item.id}
+              role="tab"
+              type="button"
+              id={`dr-tab-${item.id}`}
+              aria-selected={tab === item.id}
+              aria-controls="dr-panel"
+              className={tab === item.id ? "is-active" : undefined}
+              onClick={() => setTab(item.id)}
+              aria-label={item.label}
+            >
+              <span className="dr-tab-long">{item.label}</span>
+              <span className="dr-tab-short" aria-hidden="true">
+                {item.short}
+              </span>
+            </button>
+          ))}
+        </div>
+        <div className="dr-export" role="group" aria-label="Download the schedule and groups">
+          <button type="button" className="dr-chipbtn" disabled={exporting !== null} onClick={() => void exportSheet("png")}>
+            {exporting === "png" ? "Preparing…" : "PNG"}
           </button>
-        ))}
+          <button type="button" className="dr-chipbtn" disabled={exporting !== null} onClick={() => void exportSheet("pdf")}>
+            {exporting === "pdf" ? "Preparing…" : "PDF"}
+          </button>
+        </div>
       </div>
+      {exportNote ? (
+        <p className="dr-note" role="status">
+          {exportNote}
+        </p>
+      ) : null}
 
       <div id="dr-panel" role="tabpanel" aria-labelledby={`dr-tab-${tab}`} className="dr-panel">
-        {tab === "schedule" ? (
+        {tab === "day1" || tab === "day2" ? (
           <>
             <div className="dr-controls">
-              <div className="dr-seg" role="group" aria-label="Day">
-                {(
-                  [
-                    ["1", "Saturday", "28 Nov"],
-                    ["2", "Sunday", "29 Nov"],
-                    ["both", "Both days", ""],
-                  ] as const
-                ).map(([value, label, date]) => (
-                  <button key={value} type="button" aria-pressed={day === value} className={day === value ? "is-active" : undefined} onClick={() => setDay(value)}>
-                    {label}
-                    {date ? <small>{date}</small> : null}
-                  </button>
-                ))}
-              </div>
-              <div className="dr-controls-right">
-                <label className="dr-select">
-                  <span className="dr-sr">Team</span>
-                  <select value={filters.team} onChange={set("team")} aria-label="Show one team">
-                    <option value="">All teams</option>
-                    {orderedTeams.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button type="button" className={extraCount ? "dr-chipbtn is-on" : "dr-chipbtn"} aria-expanded={moreFilters} aria-controls="dr-more-filters" onClick={() => setMoreFilters((value) => !value)}>
-                  Filters{extraCount ? ` · ${extraCount}` : ""}
+              <label className="dr-select">
+                <span className="dr-sr">Team</span>
+                <select value={filters.team} onChange={set("team")} aria-label="Show one team">
+                  <option value="">All teams</option>
+                  {orderedTeams.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button type="button" className={extraCount ? "dr-chipbtn is-on" : "dr-chipbtn"} aria-expanded={moreFilters} aria-controls="dr-more-filters" onClick={() => setMoreFilters((value) => !value)}>
+                Filters{extraCount ? ` · ${extraCount}` : ""}
+              </button>
+              {extraCount || filters.team ? (
+                <button type="button" className="dr-chipbtn" onClick={() => setFilters(EMPTY)}>
+                  Clear
                 </button>
-              </div>
+              ) : null}
             </div>
             {moreFilters ? (
               <div className="dr-filters" id="dr-more-filters" role="group" aria-label="More filters">
@@ -208,7 +239,6 @@ export function ScheduleViews({
                     <option value="">All groups</option>
                     <option value="A">Group A</option>
                     <option value="B">Group B</option>
-                    <option value="C">Group C</option>
                     <option value="KO">Knockouts only</option>
                   </select>
                 </label>
@@ -231,166 +261,136 @@ export function ScheduleViews({
                     <option value="B">Ground B</option>
                   </select>
                 </label>
-                {extraCount || filters.team ? (
-                  <button type="button" className="dr-chipbtn" onClick={() => setFilters(EMPTY)}>
-                    Clear all
-                  </button>
-                ) : null}
               </div>
             ) : null}
-            <Timetable matches={listed} days={day === "both" ? [1, 2] : [Number(day) as 1 | 2]} onTeam={openTeam} highlightTeam={filters.team || null} linkable={official} />
+            <Timetable matches={listed} day={day} timetable={timetable ?? plan.timetable} onTeam={openTeam} highlightTeam={filters.team || null} linkable={official} bye={filters.team === bye.teamId ? bye : null} />
           </>
         ) : null}
-        {tab === "groups" ? <GroupsPanel plan={plan} matches={matches} names={names} teams={teamMap} group={group} setGroup={setGroup} onTeam={openTeam} linkable={official} /> : null}
-        {tab === "teams" ? <TeamPanel kind={kind} plan={plan} matches={matches} teamId={team} setTeam={setTeam} orderedTeams={orderedTeams} teams={teamMap} drawRef={drawRef ?? null} onTeam={openTeam} /> : null}
-        {tab === "bracket" ? <Bracket matches={matches} onTeam={official ? openTeam : undefined} /> : null}
+        {tab === "groupA" ? <GroupPanel group="A" plan={plan} matches={matches} onTeam={openTeam} linkable={official} /> : null}
+        {tab === "groupB" ? <GroupPanel group="B" plan={plan} matches={matches} onTeam={openTeam} linkable={official} /> : null}
+        {tab === "knockouts" ? <Bracket matches={matches} onTeam={official ? openTeam : undefined} /> : null}
+        {tab === "team" ? <TeamPanel kind={kind} plan={plan} matches={matches} bye={bye} teamId={team} setTeam={setTeam} orderedTeams={orderedTeams} teams={teamMap} drawRef={drawRef ?? null} onTeam={openTeam} /> : null}
         {tab === "standings" && official ? (
           qualification ? (
-            <StandingsBoard qualification={qualification} names={names} teams={teamMap} onTeam={openTeam} />
+            <StandingsBoard qualification={qualification} names={names} teams={teamMap} onTeam={openTeam} confirmedAt={confirmedAt ?? null} />
           ) : (
             <p className="dr-empty">Standings appear after the first result.</p>
           )
         ) : null}
       </div>
+
+      <details className="dr-rules dr-rules--page">
+        <summary>Points, qualification and the BYE</summary>
+        <p className="dr-rules-h">Points and ranking</p>
+        <ol>
+          {TIE_BREAKERS.map((rule) => (
+            <li key={rule}>{rule}</li>
+          ))}
+        </ol>
+        <p className="dr-rules-h">Qualification</p>
+        <ul>
+          {QUALIFICATION_RULES.map((rule) => (
+            <li key={rule}>{rule}</li>
+          ))}
+        </ul>
+        <p className="dr-rules-h">The BYE</p>
+        <ul>
+          {BYE_RULES.map((rule) => (
+            <li key={rule}>{rule}</li>
+          ))}
+        </ul>
+        <p className="dr-rules-h">Tied knockout matches</p>
+        <p>{KNOCKOUT_TIE_RULE}</p>
+        <p className="dr-rules-foot">{LEAGUE_MATCHES} league matches, 4 quarterfinals, 2 semifinals and the final: 35 matches. League and quarterfinals are 6 overs a side; semifinals and the final are 8.</p>
+      </details>
     </div>
   );
 }
 
 /** A day as a real timetable: times down the side, Ground A and Ground B across. Phones stack the two grounds. */
-function Timetable({ matches, days, onTeam, highlightTeam, linkable }: { matches: ViewMatch[]; days: (1 | 2)[]; onTeam: (teamId: string) => void; highlightTeam: string | null; linkable: boolean }) {
-  if (matches.length === 0) return <p className="dr-empty">No matches fit that choice.</p>;
+function Timetable({
+  matches,
+  day,
+  timetable,
+  onTeam,
+  highlightTeam,
+  linkable,
+  bye,
+}: {
+  matches: ViewMatch[];
+  day: 1 | 2;
+  timetable: Timetable;
+  onTeam: (teamId: string) => void;
+  highlightTeam: string | null;
+  linkable: boolean;
+  bye: ViewBye | null;
+}) {
+  if (matches.length === 0 && !bye) return <p className="dr-empty">No matches fit that choice.</p>;
+  const rows = matches;
+  const slots = [...new Set(rows.map((m) => m.startMinutes))].sort((a, b) => a - b);
+  const league = rows.filter((m) => m.stage === "league").length;
+  const meta =
+    day === 1
+      ? `${rows.length} ${rows.length === 1 ? "match" : "matches"} · 6 overs a side`
+      : league === rows.length
+        ? `${rows.length} league ${rows.length === 1 ? "match" : "matches"} · 6 overs a side`
+        : `${rows.length} ${rows.length === 1 ? "match" : "matches"} · quarterfinals 6 overs, semifinals and final 8`;
+  const final = rows.find((m) => m.code === "F");
   return (
     <div className="dr-timetable">
-      {days.map((day) => {
-        const rows = matches.filter((m) => m.day === day);
-        if (rows.length === 0) return null;
-        const slots = [...new Set(rows.map((m) => m.startMinutes))].sort((a, b) => a - b);
-        const league = rows.filter((m) => m.stage === "league").length;
-        const meta =
-          day === 1
-            ? `${rows.length} ${rows.length === 1 ? "match" : "matches"} · 6 overs a side`
-            : league === rows.length
-              ? `${rows.length} league ${rows.length === 1 ? "match" : "matches"} · 6 overs a side`
-              : `${rows.length} ${rows.length === 1 ? "match" : "matches"} · league and quarterfinals 6 overs, semifinals and final 8`;
-        return (
-          <section className="dr-day" key={day} aria-labelledby={`dr-day-${day}`}>
-            <header className="dr-day-head">
-              <h3 id={`dr-day-${day}`}>
-                {DAY_LABEL[day]} <span>{DATES[day]}</span>
-              </h3>
-              <p>{meta}</p>
-            </header>
-            <div className="dr-grid">
-              <div className="dr-grid-head" aria-hidden="true">
-                <span />
-                <span>Ground A</span>
-                <span>Ground B</span>
-              </div>
-              {slots.map((minutes, index) => {
-                const inSlot = rows.filter((m) => m.startMinutes === minutes);
-                const knockout = inSlot.every((m) => m.stage !== "league");
-                const previousKnockout = index > 0 && rows.filter((m) => m.startMinutes === slots[index - 1]).every((m) => m.stage !== "league");
-                return (
-                  <div key={minutes} className="dr-slotgroup">
-                    {knockout && !previousKnockout ? <p className="dr-grid-divider">Knockouts</p> : null}
-                    <div className={knockout ? "dr-row dr-row--ko" : "dr-row"}>
-                      <time className="dr-row-time">{timeText(minutes)}</time>
-                      {(["A", "B"] as const).map((ground) => {
-                        const match = inSlot.find((m) => m.ground === ground);
-                        return match ? (
-                          <MatchCard key={match.code} match={match} onTeam={onTeam} highlightTeam={highlightTeam} linkable={linkable} />
-                        ) : (
-                          <div key={ground} className="dr-cell-empty" aria-hidden="true" />
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-        );
-      })}
-    </div>
-  );
-}
-
-function GroupsPanel({
-  plan,
-  matches,
-  names,
-  teams,
-  group,
-  setGroup,
-  onTeam,
-  linkable,
-}: {
-  plan: DrawPlan;
-  matches: ViewMatch[];
-  names: Map<string, string>;
-  teams: Map<string, PublicTeam>;
-  group: GroupCode;
-  setGroup: (group: GroupCode) => void;
-  onTeam: (teamId: string) => void;
-  linkable: boolean;
-}) {
-  const own = matches.filter((m) => m.stage === "league" && m.group === group).sort((x, y) => x.startsAt.localeCompare(y.startsAt));
-  return (
-    <div className="dr-groups">
-      <div className="dr-seg dr-gseg" role="group" aria-label="Group">
-        {(["A", "B", "C"] as const).map((code) => (
-          <button key={code} type="button" aria-pressed={group === code} className={group === code ? "is-active" : undefined} onClick={() => setGroup(code)}>
-            Group {code}
-          </button>
-        ))}
-      </div>
-      <div className="dr-gcards">
-        {(["A", "B", "C"] as const).map((code) => {
-          const members = plan.result.assignments.filter((a) => a.group === code).sort((x, y) => x.slot - y.slot);
-          return (
-            <section key={code} className={group === code ? "dr-gcard is-active" : "dr-gcard"} aria-label={`Group ${code}`}>
-              <header>
-                <h4>Group {code}</h4>
-                <button type="button" className="dr-chipbtn" aria-pressed={group === code} onClick={() => setGroup(code)}>
-                  {group === code ? "Matches below" : "Show matches"}
-                </button>
-              </header>
-              {([1, 2] as const).map((pool) => (
-                <ul key={pool} className="dr-gpool" aria-label={`Sub-pool ${code}${pool}`}>
-                  <li className="dr-gcard-pool">Sub-pool {code}{pool}</li>
-                  {members
-                    .filter((a) => a.subPool === pool)
-                    .map((a) => {
-                      const name = names.get(a.teamId) ?? a.teamId;
+      <section className="dr-day" aria-labelledby={`dr-day-${day}`}>
+        <header className="dr-day-head">
+          <h3 id={`dr-day-${day}`}>
+            {DAY_LABEL[day]} <span>{DATES[day]}</span>
+          </h3>
+          <p>{meta}</p>
+        </header>
+        <div className="dr-grid">
+          <div className="dr-grid-head" aria-hidden="true">
+            <span />
+            <span>Ground A</span>
+            <span>Ground B</span>
+          </div>
+          {slots.map((minutes, index) => {
+            const inSlot = rows.filter((m) => m.startMinutes === minutes);
+            const knockout = inSlot.every((m) => m.stage !== "league");
+            const previous = index > 0 ? (slots[index - 1] as number) : null;
+            const previousKnockout = previous != null && rows.filter((m) => m.startMinutes === previous).every((m) => m.stage !== "league");
+            // The inauguration break: a gap bigger than one slot between two league slots on Saturday.
+            const breakFrom = day === 1 && previous != null && !knockout && minutes - previous > timetable.slotMinutes ? previous + timetable.slotMinutes : null;
+            return (
+              <div key={minutes} className="dr-slotgroup">
+                {breakFrom != null ? (
+                  <p className="dr-grid-break">
+                    Inauguration break · {timeText(breakFrom)} to {timeText(minutes)} · both grounds
+                  </p>
+                ) : null}
+                {knockout && !previousKnockout ? <p className="dr-grid-divider">Knockouts</p> : null}
+                <div className={knockout ? "dr-row dr-row--ko" : "dr-row"}>
+                  <time className="dr-row-time">{timeText(minutes)}</time>
+                  {(["A", "B"] as const).map((ground) => {
+                    const match = inSlot.find((m) => m.ground === ground);
+                    if (match) return <MatchCard key={match.code} match={match} onTeam={onTeam} highlightTeam={highlightTeam} linkable={linkable} />;
+                    if (final && minutes === final.startMinutes && ground === "B") {
                       return (
-                        <li key={a.teamId} className={a.seed ? "is-seed" : undefined}>
-                          <i className="dr-slot-tag">{slotCodeOf(a)}</i>
-                          <TeamMark name={name} logoUrl={teams.get(a.teamId)?.logoUrl} size={24} />
-                          <button type="button" className="dr-team-btn" onClick={() => onTeam(a.teamId)}>
-                            {name}
-                          </button>
-                          {a.seed ? (
-                            <em className="dr-seed-dot" title={SEED_TEXT[a.seed]}>
-                              {SEED_TEXT[a.seed]}
-                            </em>
-                          ) : null}
-                        </li>
+                        <div key={ground} className="dr-cell-reserved">
+                          Reserved
+                        </div>
                       );
-                    })}
-                </ul>
-              ))}
-            </section>
-          );
-        })}
-      </div>
-      <h4 className="dr-subtitle">
-        Group {group} · {own.length} league matches
-      </h4>
-      <div className="dr-list">
-        {own.map((match) => (
-          <MatchCard key={match.code} match={match} onTeam={onTeam} linkable={linkable} showWhen />
-        ))}
-      </div>
+                    }
+                    return <div key={ground} className="dr-cell-empty" aria-hidden="true" />;
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        {bye ? (
+          <div className="dr-list dr-list--bye">
+            <ByeCard bye={bye} onTeam={onTeam} />
+          </div>
+        ) : null}
+      </section>
     </div>
   );
 }
@@ -399,6 +399,7 @@ function TeamPanel({
   kind,
   plan,
   matches,
+  bye,
   teamId,
   setTeam,
   orderedTeams,
@@ -409,6 +410,7 @@ function TeamPanel({
   kind: "official" | "trial";
   plan: DrawPlan;
   matches: ViewMatch[];
+  bye: ViewBye;
   teamId: string;
   setTeam: (id: string) => void;
   orderedTeams: { id: string; name: string }[];
@@ -421,28 +423,34 @@ function TeamPanel({
   const [busy, setBusy] = useState(false);
   const assignment = slotOf(plan, teamId);
   const name = orderedTeams.find((item) => item.id === teamId)?.name ?? "";
-  const own = leagueMatchesOf(matches, teamId);
+  const entries = teamEntries(matches, bye, teamId);
   const info = teams.get(teamId);
-  const link = () => {
-    const url = new URL("/2026/fixtures", window.location.origin);
-    url.searchParams.set("team", info?.slug ?? teamId);
-    return url.toString();
-  };
+  const qf1 = matches.find((m) => m.code === "QF1");
+  // The page is also rendered on the server, where there is no window: the site address is read after mount.
+  const origin = useSyncExternalStore(
+    () => () => undefined,
+    () => window.location.origin,
+    () => "",
+  );
+  const link = () => `${origin}/2026/fixtures?team=${encodeURIComponent(info?.slug ?? teamId)}`;
   const summary = () =>
     [
       `${name} — NCL 2026 fixtures${official ? "" : " (TRIAL — NOT OFFICIAL)"}`,
-      ...own.map((m) => `${DAY_LABEL[m.day]} ${timeText(m.startMinutes)} · ${m.groundName} · vs ${opponentOf(m, teamId).label}`),
+      ...entries.map((entry) =>
+        entry.kind === "match" ? `${DAY_LABEL[entry.match.day]} ${timeText(entry.match.startMinutes)} · ${entry.match.groundName} · vs ${opponentOf(entry.match, teamId).label}` : "BYE · walkover, 2 points",
+      ),
     ].join("\n");
 
   async function makeFile(): Promise<File> {
     const blob = await renderShareCard({
       teamName: name,
-      groupLine: assignment ? `Group ${assignment.group} · Sub-pool ${assignment.group}${assignment.subPool} · ${slotCodeOf(assignment)}` : "",
+      groupLine: assignment ? `Group ${assignment.group} · ${slotCodeOf(assignment)}` : "",
       seedLine: assignment?.seed ? SEED_TEXT[assignment.seed] : null,
-      matches: own.map((match) => {
-        const other = opponentOf(match, teamId);
-        return { match, opponent: other.label, opponentSlot: other.slot };
-      }),
+      entries: entries.map((entry) =>
+        entry.kind === "match"
+          ? { kind: "match" as const, match: entry.match, opponent: opponentOf(entry.match, teamId).label, opponentSlot: opponentOf(entry.match, teamId).slot }
+          : { kind: "bye" as const },
+      ),
       official,
       drawRef,
       url: official ? link() : "Trial draw - not published",
@@ -487,6 +495,7 @@ function TeamPanel({
   }
 
   if (!teamId || !assignment) return <p className="dr-empty">Choose a team.</p>;
+  const hasBye = bye.teamId === teamId;
   return (
     <div className="dr-team">
       <label className="dr-select dr-select--wide">
@@ -504,18 +513,24 @@ function TeamPanel({
         <div>
           <h3>{name}</h3>
           <p>
-            Group {assignment.group} · Sub-pool {assignment.group}
-            {assignment.subPool} · <b>{slotCodeOf(assignment)}</b>
+            Group {assignment.group} · <b>{slotCodeOf(assignment)}</b>
             {assignment.seed ? <span className="dr-seed-tag">{SEED_TEXT[assignment.seed]}</span> : null}
+            {hasBye ? <span className="dr-seed-tag dr-seed-tag--bye">2 matches + 1 BYE</span> : null}
           </p>
         </div>
       </header>
       <div className="dr-list">
-        {own.map((match) => (
-          <MatchCard key={match.code} match={match} onTeam={(id) => (id === teamId ? undefined : onTeam(id))} highlightTeam={teamId} linkable={official} showWhen />
-        ))}
+        {entries.map((entry) =>
+          entry.kind === "match" ? (
+            <MatchCard key={entry.match.code} match={entry.match} onTeam={(id) => (id === teamId ? undefined : onTeam(id))} highlightTeam={teamId} linkable={official} showWhen />
+          ) : (
+            <ByeCard key="bye" bye={entry.bye} />
+          ),
+        )}
       </div>
-      <p className="dr-team-ko">Top two in Group {assignment.group}, or one of the two best third-placed teams, play the quarterfinals on Sunday from 11:45 AM.</p>
+      <p className="dr-team-ko">
+        The top 4 of Group {assignment.group} play the quarterfinals on Sunday{qf1 ? ` from ${timeText(qf1.startMinutes)}` : ""}.
+      </p>
       <div className="dr-share" role="group" aria-label="Share these fixtures">
         <button type="button" className="dr-btn dr-btn--gold dr-btn--sm" disabled={busy} onClick={shareImage}>
           Share image

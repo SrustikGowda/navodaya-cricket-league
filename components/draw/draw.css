@@ -1171,7 +1171,7 @@ body:has(.dr-page)::after {
   border-radius: inherit;
   pointer-events: none;
   opacity: 0.1;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='520' height='240'><text x='260' y='120' text-anchor='middle' transform='rotate(-18 260 120)' fill='%23f0574b' font-family='Arial' font-weight='900' font-size='30'>TRIAL / DEMO — NOT OFFICIAL</text></svg>");
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='520' height='240'><text x='260' y='120' text-anchor='middle' transform='rotate(-18 260 120)' fill='%23f0574b' font-family='Arial' font-weight='900' font-size='30'>TRIAL RUN — NOT OFFICIAL</text></svg>");
   background-size: 520px 240px;
 }
 .dr-trial-bar {
@@ -1688,7 +1688,7 @@ body:has(.dr-page)::after {
   pointer-events: none;
 }
 .dr-stage--trial .dr-stage-main::after {
-  content: "TRIAL / DEMO — NOT OFFICIAL";
+  content: "TRIAL RUN — NOT OFFICIAL";
   position: absolute;
   inset: 0;
   z-index: 4;

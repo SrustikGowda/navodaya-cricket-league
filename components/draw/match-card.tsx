@@ -1,8 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { SEED_DESCRIPTIONS } from "@/lib/draw/bracket";
-import { DAY_LABEL, timeText, type ViewMatch, type ViewSide } from "@/lib/draw/view";
+import { DAY_LABEL, timeText, type ViewBye, type ViewMatch, type ViewSide } from "@/lib/draw/view";
 
 const STATUS: Record<string, string> = {
   in_progress: "Live",
@@ -18,13 +17,7 @@ export function matchLabel(match: Pick<ViewMatch, "stage" | "group" | "code">): 
   return `${match.stage === "quarterfinal" ? "Quarterfinal" : "Semifinal"} ${match.code.slice(2)}`;
 }
 
-function seedNumber(placeholder: string | null): number | null {
-  const found = placeholder?.match(/^seed:(\d)$/);
-  return found ? Number(found[1]) : null;
-}
-
 export function SideName({ side, winner, onTeam }: { side: ViewSide; winner: boolean; onTeam?: (teamId: string) => void }) {
-  const seed = seedNumber(side.placeholder);
   const known = Boolean(side.teamId);
   return (
     <span className={["dr-side", known ? "" : "dr-side--ph", winner ? "dr-side--win" : ""].filter(Boolean).join(" ")}>
@@ -35,7 +28,6 @@ export function SideName({ side, winner, onTeam }: { side: ViewSide; winner: boo
       ) : (
         <span>{side.label}</span>
       )}
-      {seed ? <small>{SEED_DESCRIPTIONS[seed]}</small> : null}
     </span>
   );
 }
@@ -82,6 +74,7 @@ export function MatchCard({
           <span className="dr-m-ground">{match.groundName}</span>
         )}
         {status ? <span className={`dr-m-status dr-m-status--${match.status}`}>{status}</span> : null}
+        {match.changeNote && match.status !== "completed" ? <span className="dr-m-moved" title={match.changeNote}>Rescheduled</span> : null}
         {linkable && match.fixtureId ? (
           <Link className="dr-m-link" href={`/2026/matches/${match.fixtureId}`} aria-label={`Match ${match.number} details`}>
             <svg viewBox="0 0 16 16" aria-hidden="true">
@@ -97,6 +90,39 @@ export function MatchCard({
       <div className={decided && !winnerB ? "dr-m-row dr-m-row--lost" : "dr-m-row"}>
         <SideName side={match.b} winner={winnerB} onTeam={onTeam} />
         {match.scoreB ? <span className="dr-m-score">{match.scoreB}</span> : null}
+      </div>
+    </article>
+  );
+}
+
+/**
+ * The walkover as one line of a team's list. It is not a match: no time, no ground, no score. The team is given
+ * 2 points, and the card says so plainly.
+ */
+export function ByeCard({ bye, onTeam }: { bye: ViewBye; onTeam?: (teamId: string) => void }) {
+  return (
+    <article className="dr-match dr-match--bye" data-code="BYE" aria-label={`BYE for ${bye.label}. A walkover worth 2 points. Not a match.`}>
+      <div className="dr-m-top">
+        <span className="dr-m-no">BYE</span>
+        <span className="dr-m-label">Group A</span>
+        <span className="dr-m-status dr-m-status--bye">2 points</span>
+      </div>
+      <div className="dr-m-row">
+        <span className="dr-side">
+          {onTeam ? (
+            <button type="button" className="dr-team-btn" onClick={() => onTeam(bye.teamId)}>
+              {bye.label}
+            </button>
+          ) : (
+            <span>{bye.label}</span>
+          )}
+        </span>
+      </div>
+      <div className="dr-m-row dr-m-row--bye">
+        <span className="dr-side">
+          <b>BYE</b>
+          <small>A walkover. No match, no runs, no net run rate.</small>
+        </span>
       </div>
     </article>
   );

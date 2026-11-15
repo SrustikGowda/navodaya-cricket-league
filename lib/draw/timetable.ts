@@ -118,6 +118,10 @@ async function plan(query: Queryable, draw: OfficialDrawView, patch: TimetablePa
   return { timetable, changes, errors: report.errors, notes: report.notes, fixtures, next };
 }
 
+function summary(full: ReschedulePreview): ReschedulePreview {
+  return { timetable: full.timetable, changes: full.changes, errors: full.errors, notes: full.notes };
+}
+
 async function currentDraw(query: Queryable): Promise<OfficialDrawView> {
   const draw = await getOfficialDraw(query);
   if (!draw) throw new DomainError("There is no official draw to reschedule.", 404, "no_draw");
@@ -127,8 +131,7 @@ async function currentDraw(query: Queryable): Promise<OfficialDrawView> {
 export async function previewReschedule(db: Db, actor: Actor, patch: TimetablePatch): Promise<ReschedulePreview> {
   if (actor.role !== "organizer") throw new DomainError("Organizer access is required.", 403, "forbidden");
   const draw = await currentDraw(db);
-  const { fixtures: _fixtures, next: _next, ...preview } = await plan(db, draw, patch);
-  return preview;
+  return summary(await plan(db, draw, patch));
 }
 
 async function groundIds(query: Queryable, seasonId: string): Promise<Map<GroundCode, string>> {
@@ -174,8 +177,7 @@ export async function rescheduleOfficialDraw(db: Db, actor: Actor, input: { patc
       changed: preview.changes.length,
       changes: preview.changes,
     });
-    const { fixtures: _fixtures, next: _next, ...rest } = preview;
-    return rest;
+    return summary(preview);
   });
   clearReadCache();
   return result;

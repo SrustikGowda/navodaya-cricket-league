@@ -7,20 +7,27 @@ async function noOverflow(page: Page) {
   expect(overflow).toBeLessThanOrEqual(1);
 }
 
-test("the tournament format picture is shown, opens full size, and does not overflow", async ({ page }) => {
+test("the 19-team, two-group format is shown, and nothing from the old format is", async ({ page }) => {
   await page.goto("/2026/fixtures");
   await expect(page.getByRole("heading", { name: "Fixtures", exact: true })).toBeVisible();
-  const picture = page.getByRole("img", { name: /NCL 2026 tournament format/ });
-  await expect(picture).toBeVisible();
-  // It really loaded, not a broken image.
-  await expect.poll(() => picture.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
-  await expect(page.getByRole("link", { name: /full size/ })).toHaveAttribute("href", "/brand/ncl-2026-format-v1.png");
-  expect((await page.request.get("/brand/ncl-2026-format-v1.png")).status()).toBe(200);
-  // The words behind the picture are available too.
-  await expect(picture).toHaveAttribute("alt", /27 league matches plus 7 knockouts make 34 matches/);
-  await expect(page.getByText("Points and tie-breakers")).toBeVisible();
+  const format = page.getByRole("figure", { name: /19 teams in two groups/ });
+  await expect(format).toBeVisible();
+  await expect(format).toContainText("Group A");
+  await expect(format).toContainText("9 teams");
+  await expect(format).toContainText("+ 1 BYE");
+  await expect(format).toContainText("13 matches");
+  await expect(format).toContainText("Group B");
+  await expect(format).toContainText("10 teams");
+  await expect(format).toContainText("15 matches");
+  await expect(format).toContainText("8");
+  await expect(format).toContainText("qualifiers");
+  await expect(format).toContainText("Every team plays 3 league fixtures");
   await expect(page.getByRole("button", { name: "TRIAL RUN" })).toBeVisible();
   await expect(page.getByRole("button", { name: "REAL RUN" })).toBeVisible();
+  // No trace of the old 18-team, three-group format, and no picture of it.
+  await expect(page.getByText(/Group C|sub-pool|wildcard|third-placed|18 teams|34 (matches|fixtures)/i)).toHaveCount(0);
+  await expect(page.locator('img[src*="format-v1"]')).toHaveCount(0);
+  expect((await page.request.get("/brand/ncl-2026-format-v1.png")).status()).toBe(404);
   await noOverflow(page);
 });
 
@@ -31,34 +38,61 @@ test("a trial run plays the whole draw, is marked as unofficial, repeats, and wr
   });
   await page.goto("/2026/fixtures");
   await page.getByRole("button", { name: "TRIAL RUN" }).click();
-  const stage = page.getByRole("dialog", { name: /trial draw/i });
+  const stage = page.getByRole("dialog", { name: /trial run/i });
   await expect(stage).toBeVisible();
-  await expect(stage.getByText("TRIAL DRAW — NOT OFFICIAL")).toBeVisible();
-  await expect(stage.getByText("/ 18 teams assigned")).toBeVisible();
+  await expect(stage.getByText("TRIAL RUN — NOT OFFICIAL").first()).toBeVisible();
+  await expect(stage.getByText("/ 19 teams assigned")).toBeVisible();
+  // A trial belongs to one viewer: it waits to be started, and can be paused and stepped.
+  await stage.getByRole("button", { name: "Start reveal" }).click();
+  await expect(stage.getByRole("button", { name: "Pause" })).toBeVisible();
+  await stage.getByRole("button", { name: "Next team" }).click();
+  await expect(stage.getByRole("button", { name: "Replay" })).toBeVisible();
+  await stage.getByRole("button", { name: "Pause" }).click();
+  await expect(stage.getByRole("button", { name: "Auto play" })).toBeVisible();
   await stage.getByRole("button", { name: "Skip animation" }).click();
   await expect(stage.getByText("TRIAL COMPLETE — NOT OFFICIAL")).toBeVisible();
-  // Seeded rules are visible in the result: champion and runner-up in different groups, Group C holds both other semifinalists.
-  const group = (letter: string) => stage.getByRole("region", { name: `Group ${letter}` });
-  await expect(group("C").getByText(/Jnv Junglees/)).toBeVisible();
-  await expect(group("C").getByText(/Balehonnur Bulls/)).toBeVisible();
-  const champion = [await group("A").getByText(/4s-11/).count(), await group("B").getByText(/4s-11/).count()];
-  const runnerUp = [await group("A").getByText("RCB United").count(), await group("B").getByText("RCB United").count()];
-  expect(champion[0] + champion[1]).toBe(1);
-  expect(runnerUp[0] + runnerUp[1]).toBe(1);
-  expect(champion[0]).not.toBe(runnerUp[0]);
+
+  // The seeded rules are visible in the result.
+  const at = (code: string) => stage.locator(`[data-slot="${code}"]`);
+  await expect(at("A1")).toContainText("4s-11");
+  await expect(stage.getByRole("region", { name: "Group B" })).toContainText("RCB United");
+  const inA = async (name: RegExp) => (await stage.getByRole("region", { name: "Group A" }).getByText(name).count()) > 0;
+  expect(await inA(/Jnv Junglees/)).not.toBe(await inA(/Balehonnur Bulls/));
+  await expect(stage.locator('[data-slot^="A"]')).toHaveCount(9);
+  await expect(stage.locator('[data-slot^="B"]')).toHaveCount(10);
+  await expect(at("A9")).toContainText("BYE");
+  await expect(at("A9")).not.toContainText(/4s-11|RCB United|Jnv Junglees|Balehonnur Bulls/);
+  await expect(stage.locator(".dr-boards-note")).toContainText("2 matches + 1 BYE");
 
   await stage.getByRole("button", { name: "See trial fixtures" }).click();
-  await expect(page.getByText("TRIAL / DEMO — NOT OFFICIAL.")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Back to format" })).toBeVisible();
-  await page.getByRole("button", { name: "Both days" }).click();
-  await expect(page.locator(".dr-views--trial .dr-match")).toHaveCount(34);
+  await expect(page.getByText("TRIAL RUN — NOT OFFICIAL.")).toBeVisible();
+  for (const name of ["Try again", "Replay reveal", "View groups", "View schedule", "Back to Fixtures"]) {
+    await expect(page.getByRole("button", { name }).first()).toBeVisible();
+  }
+  const views = page.locator(".dr-views--trial");
+  await expect(views.locator(".gc")).toHaveCount(2);
+  await expect(views.locator(".gc-bye").first()).toContainText("2 matches + 1 BYE");
+  // 20 matches on Saturday, 15 on Sunday (8 league and 7 knockouts): 35 in all.
+  await views.getByRole("tab", { name: "Day 1 · Saturday" }).click();
+  await expect(views.locator(".dr-match")).toHaveCount(20);
+  await expect(views.locator(".dr-grid-break")).toContainText("Inauguration break");
+  await views.getByRole("tab", { name: "Day 2 · Sunday" }).click();
+  await expect(views.locator(".dr-match")).toHaveCount(15);
+  await expect(views.locator(".dr-cell-reserved")).toHaveText("Reserved");
+  await views.getByRole("tab", { name: "Group A" }).click();
+  await expect(views.locator(".gp .dr-match")).toHaveCount(13);
+  await views.getByRole("tab", { name: "Group B" }).click();
+  await expect(views.locator(".gp .dr-match")).toHaveCount(15);
+  await views.getByRole("tab", { name: "Knockouts" }).click();
+  await expect(views.locator(".dr-bk-card:visible", { hasText: "Group A #1" }).first()).toBeVisible();
+  await views.getByRole("tab", { name: "My team" }).click();
+  await expect(views.locator(".dr-team article.dr-match")).toHaveCount(3);
   await noOverflow(page);
 
   await page.getByRole("button", { name: "Try again" }).first().click();
-  await expect(page.getByRole("dialog", { name: /trial draw/i })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: /trial run/i })).toBeVisible();
   await page.getByRole("button", { name: "Close" }).click();
-  await page.getByRole("button", { name: "Back to format" }).click();
+  await page.getByRole("button", { name: "Back to Fixtures" }).click();
 
   expect(writes.every((entry) => entry === "POST /api/draw/trial")).toBe(true);
   const official = await page.request.get("/api/draw/official");
@@ -67,6 +101,11 @@ test("a trial run plays the whole draw, is marked as unofficial, repeats, and wr
 
 test("the real run needs an organizer, the right password and a confirmation", async ({ page, browser }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop", "The one-time official draw is run once, on desktop.");
+  const problems: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") problems.push(message.text());
+  });
+  page.on("pageerror", (error) => problems.push(error.message));
   await page.goto("/2026/fixtures");
 
   // A visitor who is not signed in is sent to organizer sign-in, and cannot call the API either.
@@ -91,7 +130,7 @@ test("the real run needs an organizer, the right password and a confirmation", a
 
   await page.getByLabel("Draw password").fill(DRAW_PASSWORD);
   await page.getByRole("button", { name: "Continue" }).click();
-  await expect(page.getByText("This will generate and publish the official NCL 2026 groups and fixtures. This action cannot be repeated without an organizer-authorized reset.")).toBeVisible();
+  await expect(page.getByText("This will permanently generate and publish the official NCL 2026 groups and fixtures.")).toBeVisible();
   const publish = page.getByRole("button", { name: "Generate and publish the official draw" });
   await expect(publish).toBeDisabled();
   await page.getByRole("checkbox").check();
@@ -103,7 +142,7 @@ test("the real run needs an organizer, the right password and a confirmation", a
   await expect(watching.getByRole("dialog", { name: /official group draw/i })).toBeVisible({ timeout: 20_000 });
 
   await stage.getByRole("button", { name: "Skip animation" }).click();
-  await expect(stage.getByText("OFFICIAL FIXTURES GENERATED", { exact: true })).toBeVisible();
+  await expect(stage.getByText("OFFICIAL DRAW COMPLETED", { exact: true })).toBeVisible();
   await stage.getByRole("button", { name: "View fixtures" }).click();
 
   const status = page.locator(".dr-status");
@@ -112,15 +151,52 @@ test("the real run needs an organizer, the right password and a confirmation", a
   // Once published there is no Real Run button at all, only the status and a replay.
   await expect(page.getByRole("button", { name: "REAL RUN" })).toHaveCount(0);
 
-  // The opening match: defending champion, Saturday 7:30 AM, Ground A.
-  await expect(page.getByRole("tab", { name: "Schedule" })).toHaveAttribute("aria-selected", "true");
+  // The opening match: defending champion at A1 against A2, Saturday 7:00 AM, Ground A.
+  await expect(page.getByRole("tab", { name: "Day 1 · Saturday" })).toHaveAttribute("aria-selected", "true");
   const opener = page.locator('.dr-match[data-code="M01"]');
-  await expect(opener).toHaveAttribute("aria-label", /Saturday 7:30 AM, Ground A/);
+  await expect(opener).toHaveAttribute("aria-label", /Saturday 7:00 AM, Ground A/);
   await expect(opener).toContainText("4s-11");
-  await expect(page.locator(".dr-row", { has: opener })).toContainText("7:30 AM");
-  await page.getByRole("button", { name: "Both days" }).click();
+  await expect(page.locator(".dr-row", { has: opener })).toContainText("7:00 AM");
   await expect(page.locator(".dr-views--trial")).toHaveCount(0);
-  await expect(page.locator(".dr-match")).toHaveCount(34);
+  await expect(page.locator(".dr-match")).toHaveCount(20);
+  await expect(page.locator(".dr-grid-break")).toContainText("Inauguration break · 11:35 AM to 12:30 PM");
+  await page.getByRole("tab", { name: "Day 2 · Sunday" }).click();
+  await expect(page.locator(".dr-match")).toHaveCount(15);
+  await page.getByRole("tab", { name: "Day 1 · Saturday" }).click();
+
+  // The groups: nine and ten teams, one BYE, and who has it.
+  await expect(page.locator(".gc")).toHaveCount(2);
+  await expect(page.locator(".gc").nth(0).locator("ol li")).toHaveCount(9);
+  await expect(page.locator(".gc").nth(1).locator("ol li")).toHaveCount(10);
+  await expect(page.locator(".gc li.is-bye")).toHaveCount(1);
+  await expect(page.locator(".gc-bye").first()).toContainText("2 matches + 1 BYE");
+  const byeTeam = (await page.locator(".gc li.is-bye .dr-team-btn").innerText()).trim();
+  expect(["4s-11", "RCB United", "Jnv Junglees", "Balehonnur Bulls"]).not.toContain(byeTeam);
+  await page.getByRole("tab", { name: "Group A" }).click();
+  await expect(page.locator(".gp .dr-match")).toHaveCount(13);
+  await expect(page.locator(".gp-opp li")).toHaveCount(9);
+  await expect(page.locator(".gw")).toBeVisible();
+  await page.getByRole("tab", { name: "Group B" }).click();
+  await expect(page.locator(".gp .dr-match")).toHaveCount(15);
+  await expect(page.locator(".gp-opp li")).toHaveCount(10);
+  // The BYE team's list: two matches and the BYE, with no time or ground on the BYE.
+  await page.locator(".gc li.is-bye .dr-team-btn").click();
+  await expect(page.locator(".dr-team article.dr-match")).toHaveCount(3);
+  await expect(page.locator(".dr-match--bye")).toContainText("BYE");
+  await expect(page.locator(".dr-match--bye")).toContainText("walkover");
+  await expect(page.locator(".dr-team-head")).toContainText("2 matches + 1 BYE");
+
+  // The schedule can be downloaded as an image and as a PDF.
+  const [png] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "PNG", exact: true }).click()]);
+  expect(png.suggestedFilename()).toBe("ncl-2026-groups-and-fixtures.png");
+  const [pdf] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "PDF", exact: true }).click()]);
+  expect(pdf.suggestedFilename()).toBe("ncl-2026-groups-and-fixtures.pdf");
+  const fs = await import("node:fs");
+  expect(fs.statSync(await png.path()).size).toBeGreaterThan(60_000);
+  const bytes = fs.readFileSync(await pdf.path());
+  expect(bytes.subarray(0, 5).toString()).toBe("%PDF-");
+  expect(bytes.subarray(-6).toString()).toContain("%%EOF");
+  expect(bytes.toString("latin1")).toContain("/Count 3");
 
   // Reload and a fresh visitor see the same draw; nothing is written. Replaying never calls the server.
   const writes: string[] = [];
@@ -145,7 +221,7 @@ test("the real run needs an organizer, the right password and a confirmation", a
   await replay.getByRole("button", { name: "Skip animation" }).click();
   await expect(replay.getByText("OFFICIAL DRAW · REPLAY", { exact: true })).toBeVisible();
   await replay.getByRole("button", { name: "View fixtures" }).click();
-  expect(writes).toEqual([]);
+  expect(writes, `browser problems: ${problems.join(" | ")}`).toEqual([]);
   await expect(page.locator(".dr-status")).toContainText(ref);
 
   // The API refuses another draw, whoever asks.
@@ -154,14 +230,14 @@ test("the real run needs an organizer, the right password and a confirmation", a
   expect((await (await page.request.get("/api/draw/official")).json()).official.ref).toBe(ref);
 
   // Tapping a team shows its three matches, and the address is shareable.
-  await page.getByRole("tab", { name: "Teams" }).click();
-  await expect(page.locator(".dr-team .dr-match")).toHaveCount(3);
+  await page.getByRole("tab", { name: "My team" }).click();
+  await expect(page.locator(".dr-team article.dr-match")).toHaveCount(3);
   // Teams are listed oldest batch first, not alphabetically.
   const picker = page.getByLabel("Choose a team").locator("option");
-  await expect(picker).toHaveCount(18);
+  await expect(picker).toHaveCount(19);
   await expect(picker.first()).toHaveText("4s-11 (2004–2011)");
   await expect(picker.nth(1)).toHaveText("RCB United");
-  await expect(picker.last()).toHaveText("Hemavathi Hawks");
+  await expect(picker.last()).toHaveText("Spartans XI");
   await expect(page.getByRole("link", { name: "Share on WhatsApp" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Share image" })).toBeVisible();
   await expect(page).toHaveURL(/team=/);
@@ -183,24 +259,24 @@ test("an admin marks fees, picks the knockouts, enters awards, then deletes the 
   // Entry fee: tick the team in Settings › Payments, and it shows on the public team card.
   await page.goto("/admin/settings");
   const payments = page.locator("#payments");
-  await expect(payments.getByRole("checkbox")).toHaveCount(18);
+  await expect(payments.getByRole("checkbox")).toHaveCount(19);
   await expect(payments.locator(".pay-name").first()).toHaveText("4s-11 (2004–2011)");
-  await expect(payments.locator(".pay-name").last()).toHaveText("Hemavathi Hawks");
+  await expect(payments.locator(".pay-name").last()).toHaveText("Spartans XI");
   const tick = payments.getByRole("checkbox", { name: /^4s-11/ });
   await tick.check();
   await expect(payments.locator(".pay-row.is-paid")).toHaveCount(1);
   await expect(payments.locator(".set-count")).toContainText(/^1 of 16 paid/);
-  await expect(payments.locator(".pay-row", { hasText: "No fee" })).toHaveCount(2);
+  await expect(payments.locator(".pay-row", { hasText: "No fee" })).toHaveCount(3);
   await page.reload();
   await expect(page.locator("#payments").getByRole("checkbox", { name: /^4s-11/ })).toBeChecked();
   await page.goto("/2026/teams");
   await expect(page.locator(".tm-card .tm-paid")).toHaveCount(1);
   await expect(page.locator(".tm-card", { has: page.locator(".tm-paid") })).toContainText("4s-11");
-  // Every other team says so too: 15 have not paid, and the 2 teams from 2021+ batches show "No fee".
+  // Every other team says so too: 15 have not paid, and the 3 teams from 2021+ batches show "No fee".
   await expect(page.locator(".tm-card .tm-unpaid")).toHaveCount(15);
   await expect(page.locator(".tm-card .tm-unpaid").first()).toHaveText("Fee not paid");
-  await expect(page.locator(".tm-card .tm-nofee")).toHaveCount(2);
-  await expect(page.locator(".tm-card", { has: page.locator(".tm-nofee") })).toHaveCount(2);
+  await expect(page.locator(".tm-card .tm-nofee")).toHaveCount(3);
+  await expect(page.locator(".tm-card", { has: page.locator(".tm-nofee") })).toHaveCount(3);
   await expect(page.locator(".tm-card", { hasText: "Hemavathi Hawks" }).locator(".tm-nofee")).toHaveText("No fee");
   await page.goto("/2026/teams/hemavathi-hawks");
   await expect(page.locator(".tm-nofee")).toHaveText("No entry fee");
@@ -210,9 +286,31 @@ test("an admin marks fees, picks the knockouts, enters awards, then deletes the 
 
   // Knockouts: choose teams and winners for Sunday's matches. Winners fill the next round by themselves.
   await page.goto("/admin/draw");
-  const pickList = page.locator("form", { hasText: "#28" }).first().locator("select").nth(0).locator("option");
+  const pickList = page.locator("form", { hasText: "#29" }).first().locator("select").nth(0).locator("option");
   await expect(pickList.nth(1)).toHaveText("4s-11 (2004–2011)");
-  await expect(pickList.last()).toHaveText("Hemavathi Hawks");
+  await expect(pickList.last()).toHaveText("Spartans XI");
+
+  // The final standings cannot be confirmed before every league result is in.
+  await expect(page.locator("#confirm")).toContainText("Available once all 28 league matches have a result");
+
+  // Match times: a change that breaks the rules cannot be applied; a good one is previewed, applied and shown publicly.
+  const times = page.locator("#timetable");
+  await times.locator('input[name="saturdayStart"]').fill("12:00");
+  await times.getByRole("button", { name: "Preview the change" }).click();
+  await expect(times.getByText("These times break the rules")).toBeVisible();
+  await expect(times.getByRole("button", { name: /^Apply: move/ })).toHaveCount(0);
+  await times.locator('input[name="saturdayStart"]').fill("07:30");
+  await times.locator('input[name="note"]').fill("Start half an hour later");
+  await times.getByRole("button", { name: "Preview the change" }).click();
+  await expect(times.getByText(/matches would move/)).toBeVisible();
+  page.once("dialog", (dialog) => void dialog.accept());
+  await times.getByRole("button", { name: /^Apply: move/ }).click();
+  await expect(times.getByText(/matches were moved/)).toBeVisible();
+  await page.goto("/2026/fixtures");
+  await expect(page.locator('.dr-match[data-code="M01"]')).toContainText("4s-11");
+  await expect(page.locator(".dr-row", { has: page.locator('.dr-match[data-code="M01"]') })).toContainText("7:30 AM");
+  await expect(page.locator('.dr-match[data-code="M01"] .dr-m-moved')).toHaveText("Rescheduled");
+  await page.goto("/admin/draw");
   const save = async (match: string, teamA: string, teamB: string, winner: string | null) => {
     const form = page.locator("form", { hasText: match }).filter({ has: page.getByRole("button", { name: "Save" }) }).first();
     await form.locator("select").nth(0).selectOption({ label: teamA });
@@ -221,20 +319,20 @@ test("an admin marks fees, picks the knockouts, enters awards, then deletes the 
     await form.getByRole("button", { name: "Save" }).click();
     await expect(form.getByText("Saved.")).toBeVisible();
   };
-  await save("#28", "4s-11 (2004–2011)", "RCB United", "4s-11 (2004–2011)");
-  await save("#29", "GTR", "The Elite", "GTR");
-  await save("#30", "Champions-11", "IX-ELEVENS", "IX-ELEVENS");
-  await save("#31", "Tunga Titans", "Malnad Mavericks", "Tunga Titans");
+  await save("#29", "4s-11 (2004–2011)", "RCB United", "4s-11 (2004–2011)");
+  await save("#30", "GTR", "The Elite", "GTR");
+  await save("#31", "Champions-11", "IX-ELEVENS", "IX-ELEVENS");
+  await save("#32", "Tunga Titans", "Malnad Mavericks", "Tunga Titans");
   await page.reload();
-  const sf1 = page.locator("form", { hasText: "#32" }).first();
+  const sf1 = page.locator("form", { hasText: "#33" }).first();
   await expect(sf1.locator("select").nth(0)).toHaveValue(/.+/);
   await expect(sf1.locator("select").nth(1)).toHaveValue(/.+/);
-  await save("#32", "4s-11 (2004–2011)", "GTR", "4s-11 (2004–2011)");
-  await save("#33", "IX-ELEVENS", "Tunga Titans", "Tunga Titans");
+  await save("#33", "4s-11 (2004–2011)", "GTR", "4s-11 (2004–2011)");
+  await save("#34", "IX-ELEVENS", "Tunga Titans", "Tunga Titans");
   await page.goto("/history");
   await expect(page.getByRole("tab", { name: /2026/ })).toHaveCount(0);
   await page.goto("/admin/draw");
-  await save("#34", "4s-11 (2004–2011)", "Tunga Titans", "Tunga Titans");
+  await save("#35", "4s-11 (2004–2011)", "Tunga Titans", "Tunga Titans");
 
   // The History page now has the edition, with no extra step.
   await page.goto("/history?year=2026");
@@ -283,8 +381,9 @@ test("the draw respects reduced motion and still finishes", async ({ browser }, 
   const page = await context.newPage();
   await page.goto("http://127.0.0.1:3458/2026/fixtures");
   await page.getByRole("button", { name: "TRIAL RUN" }).click();
-  const stage = page.getByRole("dialog", { name: /trial draw/i });
+  const stage = page.getByRole("dialog", { name: /trial run/i });
   await expect(stage).toHaveClass(/dr-reduced/);
-  await expect(stage.getByText("TRIAL COMPLETE — NOT OFFICIAL")).toBeVisible({ timeout: 40_000 });
+  await stage.getByRole("button", { name: "Start reveal" }).click();
+  await expect(stage.getByText("TRIAL COMPLETE — NOT OFFICIAL")).toBeVisible({ timeout: 60_000 });
   await context.close();
 });

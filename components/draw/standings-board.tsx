@@ -1,13 +1,13 @@
 "use client";
 
-import { TIE_BREAKERS } from "@/lib/draw/config";
+import { LEAGUE_MATCHES, QUALIFICATION_RULES, TIE_BREAKERS } from "@/lib/draw/config";
 import { formatNrr, type Qualification, type StandingRow } from "@/lib/draw/standings";
 import type { GroupCode, PublicTeam } from "@/lib/draw/types";
 import { TeamMark } from "./team-mark";
 
 function Row({ row, name, team, badge, mine, onTeam }: { row: StandingRow; name: string; team?: PublicTeam; badge: string | null; mine: boolean; onTeam?: (id: string) => void }) {
   return (
-    <tr className={[badge === "Q" ? "dr-row--q" : badge === "WC" ? "dr-row--wc" : "", mine ? "dr-row--mine" : ""].filter(Boolean).join(" ")}>
+    <tr className={[badge === "Q" ? "dr-row--q" : "", mine ? "dr-row--mine" : ""].filter(Boolean).join(" ")}>
       <td className="dr-t-rank">{row.rank}</td>
       <td className="dr-t-team">
         <div className="dr-t-cell">
@@ -17,14 +17,14 @@ function Row({ row, name, team, badge, mine, onTeam }: { row: StandingRow; name:
           ) : (
             <span>{name}</span>
           )}
-          {badge ? <i className={`dr-badge dr-badge--${badge.toLowerCase()}`}>{badge === "Q" ? "Qualified" : badge === "WC" ? "Wildcard" : badge}</i> : null}
+          {row.byes > 0 ? <i className="dr-badge dr-badge--bye" title="A BYE walkover: 2 points, not a match">BYE +2</i> : null}
+          {badge ? <i className={`dr-badge dr-badge--${badge.toLowerCase()}`}>{badge === "Q" ? "Qualified" : badge}</i> : null}
         </div>
       </td>
       <td>{row.played}</td>
       <td>{row.won}</td>
       <td>{row.lost}</td>
-      <td>{row.tied}</td>
-      <td>{row.noResult}</td>
+      <td>{row.tied + row.noResult}</td>
       <td className="dr-t-pts">{row.points}</td>
       <td className="dr-t-nrr">{formatNrr(row.nrr)}</td>
     </tr>
@@ -39,8 +39,7 @@ const HEAD = (
       <th title="Played">P</th>
       <th title="Won">W</th>
       <th title="Lost">L</th>
-      <th title="Tied">T</th>
-      <th title="No result">NR</th>
+      <th title="Tied or no result">T/NR</th>
       <th title="Points">Pts</th>
       <th title="Net run rate">NRR</th>
     </tr>
@@ -54,7 +53,9 @@ export function StandingsBoard({
   teams,
   highlightTeam,
   onTeam,
+  confirmedAt = null,
 }: {
+  confirmedAt?: string | null;
   qualification: Qualification;
   names: Map<string, string>;
   teams: Map<string, PublicTeam>;
@@ -67,8 +68,8 @@ export function StandingsBoard({
   return (
     <div className="dr-standings">
       <p className="dr-st-progress" role="status">
-        <b>{qualification.leagueMatchesPlayed}</b> of 27 league results in
-        {qualification.leagueComplete ? "" : " · tables are provisional until every group has played all nine matches"}
+        <b>{qualification.leagueMatchesPlayed}</b> of {LEAGUE_MATCHES} league results in
+        {qualification.leagueComplete ? (confirmedAt ? " · standings confirmed by the organizers" : " · waiting for the organizers to confirm the standings") : " · tables are provisional until both groups have played all their matches"}
       </p>
 
       {qualification.blockers.length > 0 ? (
@@ -84,7 +85,7 @@ export function StandingsBoard({
       ) : null}
 
       <div className="dr-st-groups">
-        {(["A", "B", "C"] as GroupCode[]).map((group) => {
+        {(["A", "B"] as GroupCode[]).map((group) => {
           const table = qualification.groups[group];
           return (
             <section className="dr-st-card" key={group} aria-label={`Group ${group} standings`}>
@@ -98,7 +99,7 @@ export function StandingsBoard({
                   <tbody>
                     {table.rows.map((row) => {
                       const s = status[row.teamId];
-                      const badge = s === "qualified" ? "Q" : s === "wildcard" ? "WC" : null;
+                      const badge = s === "qualified" ? "Q" : null;
                       return <Row key={row.teamId} row={row} name={nameOf(row.teamId)} team={teams.get(row.teamId)} badge={badge} mine={highlightTeam === row.teamId} onTeam={onTeam} />;
                     })}
                   </tbody>
@@ -109,34 +110,6 @@ export function StandingsBoard({
         })}
       </div>
 
-      <section className="dr-st-card dr-st-wild" aria-label="Wildcard standings">
-        <h4>
-          Wildcard race
-          <span>Third-placed teams · best 2 qualify</span>
-        </h4>
-        <div className="dr-table-wrap">
-          <table>
-            {HEAD}
-            <tbody>
-              {qualification.wildcards.rows.map((row) => (
-                <Row
-                  key={row.teamId}
-                  row={{ ...row, rank: row.wildcardRank }}
-                  name={nameOf(row.teamId)}
-                  team={teams.get(row.teamId)}
-                  badge={row.status === "wildcard" ? "WC" : null}
-                  mine={highlightTeam === row.teamId}
-                  onTeam={onTeam}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <p className="dr-st-note">
-          Ranked by points, then net run rate. {qualification.leagueComplete ? "The top two are the wildcards." : "Shown with each group's current third place; it changes as results come in."}
-        </p>
-      </section>
-
       <details className="dr-rules">
         <summary>How these tables are ranked</summary>
         <ol>
@@ -144,6 +117,12 @@ export function StandingsBoard({
             <li key={rule}>{rule}</li>
           ))}
         </ol>
+        <p className="dr-rules-h">Who qualifies</p>
+        <ul>
+          {QUALIFICATION_RULES.map((rule) => (
+            <li key={rule}>{rule}</li>
+          ))}
+        </ul>
       </details>
     </div>
   );

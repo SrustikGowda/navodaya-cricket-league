@@ -8,7 +8,7 @@ import { postJson, RequestError } from "../post-json";
 type Step = "password" | "confirm" | "running" | "error";
 
 export const CONFIRMATION_TEXT =
-  "This will generate and publish the official NCL 2026 groups and fixtures. This action cannot be repeated without an organizer-authorized reset.";
+  "This will permanently generate and publish the official NCL 2026 groups and fixtures.";
 
 /**
  * Real run, in two deliberate steps. The password is checked on the server (and checked again with the final request),

@@ -6,7 +6,7 @@ export type ShareCard = {
   teamName: string;
   groupLine: string;
   seedLine: string | null;
-  matches: { match: ViewMatch; opponent: string; opponentSlot: string | null }[];
+  entries: ({ kind: "match"; match: ViewMatch; opponent: string; opponentSlot: string | null } | { kind: "bye" })[];
   official: boolean;
   drawRef: string | null;
   url: string;
@@ -97,7 +97,7 @@ export async function renderShareCard(card: ShareCard): Promise<Blob> {
   }
   y += 28;
 
-  for (const entry of card.matches) {
+  for (const entry of card.entries) {
     g.fillStyle = "#14130f";
     g.strokeStyle = "rgba(240,200,98,0.28)";
     g.lineWidth = 2;
@@ -105,6 +105,22 @@ export async function renderShareCard(card: ShareCard): Promise<Blob> {
     g.roundRect(64, y, 952, 190, 20);
     g.fill();
     g.stroke();
+    if (entry.kind === "bye") {
+      g.fillStyle = GOLD;
+      g.font = `700 28px ${text}`;
+      g.fillText("GROUP A · LEAGUE FIXTURE 3", 96, y + 52);
+      g.fillStyle = "#f4efe4";
+      g.font = `900 64px "RPL Display", "Helvetica Neue", Arial, sans-serif`;
+      g.fillText("BYE", 96, y + 128);
+      g.fillStyle = "#a9a18d";
+      g.font = `500 28px ${text}`;
+      g.textAlign = "right";
+      g.fillText("A walkover worth 2 points.", 984, y + 104);
+      g.fillText("Not a match: no ground or time.", 984, y + 148);
+      g.textAlign = "left";
+      y += 214;
+      continue;
+    }
     g.fillStyle = GOLD;
     g.font = `700 28px ${text}`;
     g.fillText(`${DAY_LABEL[entry.match.day].toUpperCase()} · MATCH ${entry.match.number}`, 96, y + 52);

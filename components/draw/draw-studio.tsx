@@ -41,6 +41,7 @@ export function DrawStudio({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [trialTab, setTrialTab] = useState<"day1" | "a">("day1");
   const skew = useRef(0);
   const knownId = useRef<string | null>(initialBoard.official?.id ?? null);
   const stageOpen = useRef(false);
@@ -196,6 +197,11 @@ export function DrawStudio({
     window.requestAnimationFrame(() => document.getElementById("format")?.scrollIntoView({ behavior: "smooth", block: "start" }));
   }
 
+  function showTrial(tab: "day1" | "a") {
+    setTrialTab(tab);
+    window.requestAnimationFrame(() => document.getElementById("dr-views")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }
+
   const messages = (
     <>
       {!readiness.ready && !official ? (
@@ -222,7 +228,7 @@ export function DrawStudio({
         <div className="dr-trial-bar" role="status">
           <span className="dr-tag dr-tag--trial">Trial</span>
           <p>
-            <b>TRIAL / DEMO — NOT OFFICIAL.</b> A practice draw from the real teams. Nothing here is saved or published.
+            <b>TRIAL RUN — NOT OFFICIAL.</b> A practice draw from the real teams. Nothing here is saved or published.
           </p>
           <div className="dr-trial-actions">
             <button type="button" className="dr-btn dr-btn--gold dr-btn--sm" onClick={startTrial} disabled={busy}>
@@ -236,14 +242,20 @@ export function DrawStudio({
                 setStage({ mode: "trial", plan: trial, revealAt: Date.now(), countdown: false, drawRef: null, key: counter.current });
               }}
             >
-              Replay this trial
+              Replay reveal
+            </button>
+            <button type="button" className="dr-btn dr-btn--ghost dr-btn--sm" onClick={() => showTrial("a")}>
+              View groups
+            </button>
+            <button type="button" className="dr-btn dr-btn--ghost dr-btn--sm" onClick={() => showTrial("day1")}>
+              View schedule
             </button>
             <button type="button" className="dr-btn dr-btn--ghost dr-btn--sm" onClick={backToFormat}>
-              Back to format
+              Back to Fixtures
             </button>
           </div>
         </div>
-        <ScheduleViews kind="trial" plan={trial} teams={board.teams} />
+        <ScheduleViews key={trialTab} kind="trial" plan={trial} teams={board.teams} initial={{ tab: trialTab }} />
       </section>
     ) : null;
 
@@ -281,7 +293,7 @@ export function DrawStudio({
         </div>
         {messages}
         <section className="dr-fixtures" id="schedule" aria-label="Official fixtures">
-          <ScheduleViews kind="official" plan={official.plan} fixtures={board.fixtures} qualification={board.qualification} teams={board.teams} drawRef={official.ref} initial={initial} />
+          <ScheduleViews kind="official" plan={official.plan} fixtures={board.fixtures} qualification={board.qualification} teams={board.teams} drawRef={official.ref} initial={initial} timetable={official.timetable} confirmedAt={official.standingsConfirmedAt} />
         </section>
         <section className="dr-about dr-about--compact" id="format" aria-labelledby="dr-format-title">
           {about}
@@ -301,9 +313,12 @@ export function DrawStudio({
     );
   }
 
-  // Before the official draw, the page is about the draw itself.
+  // Before the official draw: the format at a glance, then the draw itself as the centrepiece.
   return (
     <>
+      <section className="dr-about dr-about--lead" id="format" aria-labelledby="dr-format-title">
+        {about}
+      </section>
       <section className="dr-drawhero" id="draw" aria-labelledby="dr-draw-title">
         <p className="dr-eyebrow">The group draw</p>
         <h2 id="dr-draw-title">Drawn live, in front of every team</h2>
@@ -317,8 +332,12 @@ export function DrawStudio({
             <span>drawn at random into the open places</span>
           </li>
           <li>
-            <b>34</b>
-            <span>fixtures and the two-day schedule, made at once</span>
+            <b>1</b>
+            <span>BYE, drawn last, for one unseeded team in Group A</span>
+          </li>
+          <li>
+            <b>36</b>
+            <span>fixture entries and the two-day schedule, made at once</span>
           </li>
         </ol>
         {messages}
@@ -339,9 +358,6 @@ export function DrawStudio({
         {children ? <div className="dr-draw-foot">{children}</div> : null}
       </section>
       {trialPanel}
-      <section className="dr-about" id="format" aria-labelledby="dr-format-title">
-        {about}
-      </section>
       {overlays}
     </>
   );

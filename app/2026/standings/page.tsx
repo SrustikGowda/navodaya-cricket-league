@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import Link from "next/link";
 import "@/components/draw/draw.css";
+import "@/components/draw/draw2.css";
 import { StandingsPanel } from "@/components/draw/standings-panel";
 import { PublicShell } from "@/components/shell";
 import { getDb } from "@/lib/db";
@@ -21,9 +22,9 @@ export default async function StandingsPage() {
       {board.official && board.qualification ? (
         <div className="dr-page dr-page--flush">
           <p className="quiet">
-            Group tables and the wildcard race, worked out from the match scores the organizers enter. <Link href="/2026/fixtures#schedule">All fixtures and the bracket</Link>
+            Group tables worked out from the match scores the organizers enter. The top 4 of each group qualify. <Link href="/2026/fixtures#schedule">All fixtures and the bracket</Link>
           </p>
-          <StandingsPanel qualification={board.qualification} roster={board.official.plan.roster} teams={board.teams} />
+          <StandingsPanel qualification={board.qualification} roster={board.official.plan.roster} teams={board.teams} confirmedAt={board.official.standingsConfirmedAt} />
         </div>
       ) : null}
       {table.needsReview ? <p className="alert">These standings need review after a result correction. They were not recalculated automatically.</p> : null}
