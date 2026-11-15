@@ -18,7 +18,7 @@ function tableText(table: RuleTable): string {
  * The rulebook, laid out to be read on a phone at the ground: the key points first, then numbered sections that can be
  * searched. Numbers stay the same while searching, so "rule 6.2" means the same thing to everyone.
  */
-export function Rulebook({ book, notes }: { book: Book; notes: string | null }) {
+export function Rulebook({ book, notes, editHref = null }: { book: Book; notes: string | null; editHref?: string | null }) {
   const [query, setQuery] = useState("");
   const q = norm(query.trim());
 
@@ -86,6 +86,11 @@ export function Rulebook({ book, notes }: { book: Book; notes: string | null }) 
           <button type="button" className="rb-print" onClick={() => window.print()}>
             Print or save as PDF
           </button>
+          {editHref ? (
+            <Link className="rb-edit" href={editHref}>
+              Edit the rules
+            </Link>
+          ) : null}
         </aside>
 
         <div className="rb-body">
@@ -148,7 +153,7 @@ export function Rulebook({ book, notes }: { book: Book; notes: string | null }) 
                         </thead>
                         <tbody>
                           {table.rows.map((row, rowIndex) =>
-                            row.length === 2 && row[1] === "" ? (
+                            row.length > 1 && row[0] !== "" && row.slice(1).every((cell) => cell === "") ? (
                               <tr key={rowIndex} className="rb-row-day">
                                 <th colSpan={table.head.length} scope="rowgroup">
                                   {row[0]}

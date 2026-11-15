@@ -6,6 +6,7 @@ import { moveMatch, previewReschedule, rescheduleOfficialDraw, type TimetablePat
 import { DomainError } from "./errors";
 import { saveAnnouncement, confirmAlias, listAnnouncements, listAudit, listHeritageQueue, listMedia, listSponsors, reviewHeritage, saveSponsor, updateArchive } from "./content";
 import { recordRefund, rejectPayment, setFeePaid, verifyPayment } from "./payments";
+import { saveRulebook } from "./rulebook";
 import { listRegistrations, overrideSquad, publishSquadChanges, removeRegistration, reviewRegistration } from "./registration";
 import {
   addGround,
@@ -206,6 +207,7 @@ export async function adminAction(actor: Actor, body: Record<string, unknown>) {
       note: String(body.note ?? ""),
     });
   }
+  if (action === "rules-save") return { rules: await saveRulebook(db, actor, numberField(body.version), body.content) };
   if (action === "save-awards") return { awards: await saveAwards(db, actor, body.awards) };
   if (action === "draw-tiebreak") {
     return recordTiebreak(db, actor, { scope: String(body.scope ?? ""), order: stringList(body.order), note: String(body.note ?? "") });

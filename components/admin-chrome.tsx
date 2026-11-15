@@ -12,6 +12,7 @@ const LINKS = [
   ["/admin/fixtures", "Fixtures"],
   ["/admin/draw", "Draw & results"],
   ["/admin/standings", "Standings"],
+  ["/admin/rules", "Rules"],
   ["/admin/content", "Content"],
   ["/admin/analytics", "Analytics"],
   ["/admin/settings", "Settings"],

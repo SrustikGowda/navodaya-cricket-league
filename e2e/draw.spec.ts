@@ -79,6 +79,44 @@ test("the rules page is complete, searchable, linked from the menu, and fits a p
   }
 });
 
+test("organizers edit the rules in Admin › Rules, the public page follows, and the standard rules can be put back", async ({ page }) => {
+  expect((await page.request.post("/api/admin/password", { data: { password: "playwright-admin" } })).status()).toBe(200);
+  await page.goto("/admin/rules");
+  await expect(page.getByRole("heading", { name: "Rules", level: 1 })).toBeVisible();
+  await expect(page.getByText("The website shows the standard rules")).toBeVisible();
+  await expect(page.locator(".re-sec")).toHaveCount(10);
+  await expect(page.locator(".re-bar")).toContainText("Everything is saved.");
+
+  // Reword a rule and add a point at a glance.
+  await page.getByRole("button", { name: /^9\s*Dismissals/ }).click();
+  const lbw = page.getByRole("textbox", { name: "Rule 9.1" });
+  await expect(lbw).toHaveValue(/LBW/);
+  await lbw.fill("LBW is not given. Agreed at the captains' meeting.");
+  await expect(page.locator(".re-bar")).toContainText("not saved yet");
+  await page.getByRole("button", { name: "+ Add a point" }).click();
+  await page.getByRole("textbox", { name: "At a glance point 9" }).fill("Bring your own whites");
+  await noOverflow(page);
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.locator(".re-bar")).toContainText("Saved. The Rules page now shows your changes.");
+  await expect(page.getByText(/Your wording is on the website/)).toBeVisible();
+
+  await page.goto("/2026/rules");
+  await expect(page.locator("#dismissals")).toContainText("Agreed at the captains' meeting");
+  await expect(page.locator(".rb-glance li")).toHaveCount(9);
+  await page.getByRole("link", { name: "Edit the rules" }).click();
+  await expect(page).toHaveURL(/\/admin\/rules$/);
+
+  // Put the standard rules back: the page shows them again.
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Use the standard rules" }).click();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.locator(".re-bar")).toContainText("shows the standard rules");
+  await page.goto("/2026/rules");
+  await expect(page.locator(".rb-rules > li")).toHaveCount(52);
+  await expect(page.locator(".rb-glance li")).toHaveCount(8);
+  await expect(page.getByText("Agreed at the captains' meeting")).toHaveCount(0);
+});
+
 test("a trial run plays the whole draw, is marked as unofficial, repeats, and writes nothing", async ({ page }) => {
   const writes: string[] = [];
   page.on("request", (request) => {
