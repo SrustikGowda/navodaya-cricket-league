@@ -1,9 +1,10 @@
 import type { Metadata, Viewport } from "next";
 import { NavTrail } from "@/components/back-button";
 import "./globals.css";
+import { siteUrl } from "@/lib/site-url";
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"),
+  metadataBase: new URL(siteUrl()),
   title: { default: "Navodaya Cricket League", template: "%s · NCL" },
   description: "Navodaya Cricket League 2026, the 15th edition, hosted by the JNVCKM Alumni Group on 15 November at Loyala School Ground, Bengaluru.",
   applicationName: "NCL 2026",
