@@ -821,3 +821,65 @@
     opacity: 0;
   }
 }
+
+/* ---------- Main page explainer: how the fixtures are made ---------- */
+.dr-how {
+  margin-top: 1.4rem;
+  padding: clamp(1.1rem, 3vw, 1.8rem);
+  border: 1px solid var(--dr-line);
+  border-radius: 18px;
+  background: #0d0c09;
+}
+.dr-how-lead {
+  max-width: 44rem;
+  margin: 0.6rem 0 1.2rem;
+  color: var(--dr-muted);
+}
+.dr-how-grid {
+  display: grid;
+  gap: 1rem;
+}
+@media (min-width: 800px) {
+  .dr-how-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+.dr-how-card {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 1rem;
+  border: 1px solid var(--dr-line);
+  border-radius: 16px;
+  background: linear-gradient(180deg, #14120d, #0c0b08);
+}
+.dr-how-card figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.2rem 0.8rem;
+}
+.dr-how-card figcaption b {
+  color: var(--dr-gold);
+  font: 900 1.5rem / 1 var(--font-display);
+}
+.dr-how-card figcaption span {
+  color: var(--dr-muted);
+  font-size: 0.88rem;
+}
+.dr-how-line {
+  min-height: 2.6em;
+  margin: 0;
+  color: var(--dr-text);
+  font-size: 0.95rem;
+  text-align: center;
+}
+.dr-how-foot {
+  margin: 1rem 0 0;
+  color: var(--dr-muted);
+  font-size: 0.86rem;
+}
+.gw--hold .gw-edge {
+  opacity: 0;
+}

@@ -1,12 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { track } from "@/components/analytics-tracker";
 import type { DrawBoard } from "@/lib/draw/board";
 import { buildTimeline } from "@/lib/draw/timeline";
 import type { DrawPlan } from "@/lib/draw/types";
 import { formatIst } from "@/lib/format";
 import { postJson } from "../post-json";
 import { DrawStage, type StageMode } from "./draw-stage";
+import { HowFixturesWork } from "./how-it-works";
 import { RealRunModal } from "./real-run-modal";
 import { ScheduleViews, type InitialView } from "./schedule-views";
 import { usePrefersReducedMotion } from "./use-motion";
@@ -158,6 +160,7 @@ export function DrawStudio({
 
   function replay() {
     if (!official) return;
+    track("replay");
     counter.current += 1;
     setStage({ mode: "replay", plan: official.plan, revealAt: Date.now(), countdown: false, drawRef: official.ref, key: counter.current });
   }
@@ -238,6 +241,7 @@ export function DrawStudio({
               type="button"
               className="dr-btn dr-btn--ghost dr-btn--sm"
               onClick={() => {
+                track("replay");
                 counter.current += 1;
                 setStage({ mode: "trial", plan: trial, revealAt: Date.now(), countdown: false, drawRef: null, key: counter.current });
               }}
@@ -349,7 +353,7 @@ export function DrawStudio({
             <small>Practice · nothing is saved</small>
           </div>
           <div>
-            <button type="button" className="dr-btn dr-btn--gold dr-btn--xl" onClick={() => setModal(true)} disabled={!readiness.ready}>
+            <button type="button" className="dr-btn dr-btn--gold dr-btn--xl" onClick={() => { track("real_run_opened"); setModal(true); }} disabled={!readiness.ready}>
               REAL RUN
             </button>
             <small>Organizers only · runs once</small>
@@ -358,6 +362,7 @@ export function DrawStudio({
         {children ? <div className="dr-draw-foot">{children}</div> : null}
       </section>
       {trialPanel}
+      <HowFixturesWork />
       {overlays}
     </>
   );
