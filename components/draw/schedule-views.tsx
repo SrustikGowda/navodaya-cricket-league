@@ -317,7 +317,7 @@ export function ScheduleViews({
         <p className="dr-rules-link">
           <a href="/2026/rules">Read the full tournament rules →</a>
         </p>
-        <p className="dr-rules-foot">{LEAGUE_MATCHES} league matches, 4 quarterfinals, 2 semifinals and the final: 35 matches. League and quarterfinals are 6 overs a side; semifinals and the final are 8.</p>
+        <p className="dr-rules-foot">{LEAGUE_MATCHES} league matches, 4 quarterfinals, 2 semifinals and the final: 35 matches. Only league matches are 6 overs a side; the quarterfinals, semifinals and the final are 8.</p>
       </details>
     </div>
   );
@@ -350,7 +350,9 @@ function Timetable({
       ? `${rows.length} ${rows.length === 1 ? "match" : "matches"} · 6 overs a side`
       : league === rows.length
         ? `${rows.length} league ${rows.length === 1 ? "match" : "matches"} · 6 overs a side`
-        : `${rows.length} ${rows.length === 1 ? "match" : "matches"} · quarterfinals 6 overs, semifinals and final 8`;
+        : league === 0
+          ? `${rows.length} ${rows.length === 1 ? "match" : "matches"} · 8 overs a side`
+          : `${league} league ${league === 1 ? "match" : "matches"} · 6 overs, ${rows.length - league} knockouts · 8 overs`;
   const final = rows.find((m) => m.code === "F");
   return (
     <div className="dr-timetable">

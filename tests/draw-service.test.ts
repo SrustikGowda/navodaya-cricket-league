@@ -433,10 +433,10 @@ test("league results flow into group tables, the quarterfinals wait for confirma
   // Quarterfinal result: the winner moves into the right semifinal slot; a tie is refused in a knockout.
   const qf1 = by("QF1");
   await assert.rejects(
-    () => recordMatchScore(db, admin, qf1.id, parseScoreEntry({ outcome: "tie", firstBats: "a", first: { runs: 30, wickets: 2, balls: 36, allOut: false }, second: { runs: 30, wickets: 4, balls: 36, allOut: false } })),
+    () => recordMatchScore(db, admin, qf1.id, parseScoreEntry({ outcome: "tie", firstBats: "a", first: { runs: 30, wickets: 2, balls: 48, allOut: false }, second: { runs: 30, wickets: 4, balls: 48, allOut: false } })),
     (e) => codeOf(e) === "knockout_tie",
   );
-  await recordMatchScore(db, admin, qf1.id, parseScoreEntry({ outcome: "win", firstBats: "b", first: { runs: 30, wickets: 2, balls: 36, allOut: false }, second: { runs: 25, wickets: 4, balls: 36, allOut: false } }));
+  await recordMatchScore(db, admin, qf1.id, parseScoreEntry({ outcome: "win", firstBats: "b", first: { runs: 30, wickets: 2, balls: 48, allOut: false }, second: { runs: 25, wickets: 4, balls: 48, allOut: false } }));
   const sf1 = (await listPublicFixtures(db)).find((f) => f.code === "SF1") as (typeof qfs)[number];
   assert.equal(sf1.teamAId, qf1.teamBId, "batting first with the higher score, side b won QF1");
   assert.equal(sf1.teamBId, null, "the other semifinal slot waits for QF2");
@@ -512,7 +512,7 @@ test("organizers can change the times of unplayed matches without touching a sin
   const originalM01 = await startOf("M01");
 
   await assert.rejects(() => rescheduleOfficialDraw(db, player, { patch: { saturdayStart: 450 }, note: "x" }), (e) => codeOf(e) === "forbidden");
-  const preview = await previewReschedule(db, admin, { saturdayStart: 7 * 60 + 30, sundayStart: 7 * 60 + 30, qf1: 11 * 60 + 45, qf2: 12 * 60 + 50, sf: 14 * 60 + 15, final: 16 * 60 });
+  const preview = await previewReschedule(db, admin, { saturdayStart: 7 * 60 + 30, sundayStart: 7 * 60 + 30, qf1: 11 * 60 + 45, qf2: 13 * 60, sf: 14 * 60 + 45, final: 16 * 60 + 30 });
   assert.deepEqual(preview.errors, []);
   assert.ok(preview.changes.length > 20);
   assert.equal(await startOf("M01"), originalM01, "a preview saves nothing");
@@ -525,7 +525,7 @@ test("organizers can change the times of unplayed matches without touching a sin
 
   // M01 is played first, so it keeps its time when the others move.
   await recordMatchScore(db, admin, (await listPublicFixtures(db)).find((f) => f.code === "M01")?.id as string, parseScoreEntry(scoreFor(0)));
-  const applied = await rescheduleOfficialDraw(db, admin, { patch: { saturdayStart: 7 * 60 + 30, sundayStart: 7 * 60 + 30, qf1: 11 * 60 + 45, qf2: 12 * 60 + 50, sf: 14 * 60 + 15, final: 16 * 60 }, note: "Start half an hour later" });
+  const applied = await rescheduleOfficialDraw(db, admin, { patch: { saturdayStart: 7 * 60 + 30, sundayStart: 7 * 60 + 30, qf1: 11 * 60 + 45, qf2: 13 * 60, sf: 14 * 60 + 45, final: 16 * 60 + 30 }, note: "Start half an hour later" });
   assert.ok(applied.changes.length > 20);
   assert.equal(await startOf("M01"), originalM01, "a match already played is not moved");
   assert.equal(await startOf("M02"), "2026-11-28T02:00:00.000Z", "07:30 IST");

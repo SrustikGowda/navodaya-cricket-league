@@ -80,7 +80,7 @@ export function StandingsBoard({
               <li key={blocker}>{blocker}</li>
             ))}
           </ul>
-          <p>Teams are level on every published tie-breaker. The site does not choose between them; the quarterfinals stay open until the organizers record a decision.</p>
+          <p>Teams are level on points and net run rate. A Super Over decides; the quarterfinals stay open until the organizers record its result.</p>
         </div>
       ) : null}
 

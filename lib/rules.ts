@@ -22,6 +22,10 @@ import { leagueSlotStarts } from "./draw/schedule";
 import { FEE_FREE_FROM_YEAR } from "./fee-state";
 import { clock } from "./draw/validate";
 
+/** Each day is announced as ending at 6:00 PM, which leaves a buffer after the last scheduled match. */
+const ANNOUNCED_DAY_END = 18 * 60;
+const announcedEnd = (scheduledEnd: number) => Math.max(ANNOUNCED_DAY_END, Math.ceil(scheduledEnd / 30) * 30);
+
 export type Rule = {
   text: string;
   /** Sub-points, shown as a list under the rule. */
@@ -87,16 +91,12 @@ export function buildRulebook(input: RulebookInput): Rulebook {
       rules: [
         { text: "The tournament is only for JNV Chikkamagaluru alumni." },
         {
-          text: "Each team must have at least 7 players from the same batch to be a valid team.",
-          note: "Batches of 1994–2001 and earlier do not need 7 players from their own batch.",
-        },
-        {
           text: input.fee ? `Each team pays an entry fee of ${input.fee}.` : "Each team pays an entry fee, announced by the Organizing Committee before the tournament.",
           note: `Batches that passed out of JNV in ${FEE_FREE_FROM_YEAR} or later, who are still studying, do not pay the fee.`,
         },
         { text: `Matches are played with ${ball}, under the standard laws of cricket and these tournament rules.` },
         { text: "All scoring is done on the CricHeroes app. If the app has technical problems, manual scoring is the backup." },
-        { text: "Only 11 players may be on the field at a time. A substitute fielder or a runner is allowed only for an injury, with the approval of the umpire and the opposing captain." },
+        { text: "Only 11 players may be on the field at a time. A runner is allowed only for an injury, with the approval of the umpire and the opposing captain." },
         {
           text: "Everyone must uphold the spirit of the game and alumni camaraderie. Abusive language, aggressive behaviour or misconduct will not be tolerated.",
           note: "The Organizing Committee may suspend or disqualify players or teams for misconduct.",
@@ -115,19 +115,16 @@ export function buildRulebook(input: RulebookInput): Rulebook {
       summary: `${TEAM_COUNT} teams, two groups, then knockouts, over two days.`,
       rules: [
         {
-          text: `The tournament is played over two days: ${dayLabel(input.days[0])}, from ${clock(t.saturdayStart)} to about ${clock(satEnd)}, and ${dayLabel(input.days[1])}, from ${clock(t.sundayStart)} to about ${clock(finalEnd)}.`,
+          text: `The tournament is played over two days: ${dayLabel(input.days[0])}, from ${clock(t.saturdayStart)} to ${clock(announcedEnd(satEnd))}, and ${dayLabel(input.days[1])}, from ${clock(t.sundayStart)} to ${clock(announcedEnd(finalEnd))}.`,
+          note: "The end time leaves a buffer for delays. Matches are scheduled to finish earlier.",
         },
         {
           text: `There is a group stage and then a knockout stage. The ${TEAM_COUNT} teams are drawn into two groups: Group A has ${GROUP_TEAMS.A} teams and one BYE, and Group B has ${GROUP_TEAMS.B} teams.`,
         },
         {
           text: "Every team gets three league fixtures. The draw places each team in a position (A1 to A9, B1 to B10), and every position always plays the same three opponents.",
-          note: "The Fixtures page shows who plays whom for every position.",
         },
-        {
-          text: groundShareText(),
-          note: "On the Fixtures page, each team shows a gold A for every league match on Ground A and a B for every match on Ground B.",
-        },
+        { text: groundShareText() },
         {
           text: `As per NCL tradition, the defending champions, ${seed("champion")}, play the first match of the tournament. They are placed at A1, and the opening match is A1 v A2.`,
           items: [
@@ -170,15 +167,10 @@ export function buildRulebook(input: RulebookInput): Rulebook {
       summary: "How the group tables are ranked and who reaches the knockouts.",
       rules: [
         {
-          text: "Group tables are ranked by:",
-          items: [
-            "Points.",
-            "Net run rate. An all-out innings counts as the full quota of overs.",
-            "Most wins.",
-            "The result of the match between the two teams, if exactly two teams are level and they played each other.",
-            "If teams are still level, the Organizing Committee decides. The website never picks a team on its own.",
-          ],
+          text: "Group tables are ranked by points, then by net run rate.",
+          note: "In net run rate, an all-out innings counts as the full quota of overs.",
         },
+        { text: "If teams are still level on points and net run rate, a Super Over is played to decide." },
         {
           text: `The top ${QUALIFIERS_PER_GROUP} teams of each group reach the quarterfinals: ${QUALIFIERS_PER_GROUP * 2} teams in all.`,
           note: "The organizers confirm the final group tables before the quarterfinal teams are filled in.",
@@ -213,23 +205,19 @@ export function buildRulebook(input: RulebookInput): Rulebook {
       summary: "Overs, time allowed and bowling quotas.",
       rules: [
         {
-          text: "The full schedule, with opponents, times and grounds, is on the Fixtures page. All teams must keep to it.",
+          text: "All teams must keep to the published schedule of opponents, times and grounds.",
           note: "Delays have consequences, because a late league match pushes back the knockouts.",
         },
         {
-          text: `League matches and quarterfinals are ${OVERS.league} overs an innings, with a maximum of 55 minutes for the match, including a 5-minute innings break.`,
+          text: `League matches are ${OVERS.league} overs an innings, with a maximum of 55 minutes for the match, including a 5-minute innings break.`,
         },
         {
-          text: `Semifinals and the final are ${OVERS.semifinal} overs an innings, with a maximum of 60 minutes for the match, including a 5-minute innings break.`,
-          note: `Playing ${OVERS.semifinal} overs in the semifinals and final depends on the time and light available, as decided by the Organizing Committee and the umpires.`,
+          text: `Quarterfinals, semifinals and the final are ${OVERS.quarterfinal} overs an innings, with a maximum of 60 minutes for the match, including a 5-minute innings break.`,
+          note: `Playing ${OVERS.quarterfinal} overs in the knockouts depends on the time and light available, as decided by the Organizing Committee and the umpires.`,
         },
         {
-          text: "In league matches and quarterfinals, each team must use at least 4 bowlers in an innings.",
-          note: "Recommended split of the 6 overs: 2–2–1–1, or 2–1–1–1–1.",
-        },
-        {
-          text: "In the semifinals and the final, each team must use at least 5 bowlers in an innings.",
-          note: "Recommended split of the 8 overs: 2–2–2–1–1.",
+          text: "In every match, each team must use at least 5 bowlers in an innings.",
+          note: `Recommended split: 2–1–1–1–1 in a ${OVERS.league}-over innings, and 2–2–2–1–1 in an ${OVERS.quarterfinal}-over innings.`,
         },
       ],
       tables: [
@@ -237,8 +225,8 @@ export function buildRulebook(input: RulebookInput): Rulebook {
           caption: "Overs and time by stage",
           head: ["Stage", "Overs an innings", "Most time for the match", "Bowlers needed"],
           rows: [
-            ["League and quarterfinals", String(OVERS.league), "55 minutes", "At least 4"],
-            ["Semifinals and final", String(OVERS.semifinal), "60 minutes", "At least 5"],
+            ["League", String(OVERS.league), "55 minutes", "At least 5"],
+            ["Quarterfinals, semifinals and final", String(OVERS.quarterfinal), "60 minutes", "At least 5"],
           ],
         },
       ],
@@ -246,9 +234,13 @@ export function buildRulebook(input: RulebookInput): Rulebook {
     {
       id: "fielding",
       title: "Fielding restrictions",
-      summary: "Where fielders may stand.",
+      summary: "Powerplay and where fielders may stand.",
       rules: [
-        { text: "No more than 5 fielders may be outside the 30-yard circle, not counting the bowler and the wicketkeeper." },
+        {
+          text: "Powerplay: at the start of each innings, no more than 2 fielders may be outside the 30-yard circle, not counting the bowler and the wicketkeeper.",
+          note: "The powerplay lasts for the first 11 balls of a 6-over innings and the first 14 balls of an 8-over innings, which is how the ICC shortens the T20 powerplay for reduced innings. Only legal balls count.",
+        },
+        { text: "After the powerplay, no more than 5 fielders may be outside the 30-yard circle, not counting the bowler and the wicketkeeper." },
         {
           text: "No more than 5 fielders may be on the leg side at any time, counting the bowler.",
           note: "When the bowler bowls around the wicket to a right-handed batter, only 4 fielders apart from the bowler may be on the leg side, so the bowler and 4 fielders make up the limit of 5.",
@@ -261,8 +253,13 @@ export function buildRulebook(input: RulebookInput): Rulebook {
       summary: "Illegal deliveries and what they cost.",
       rules: [
         {
-          text: "Underarm bowling and chucking (an illegal or suspect action) are not allowed.",
-          note: "If a batter, striker or non-striker, appeals about a bowler's action, the umpires judge it. If the action is questionable they formally warn the bowler and tell the captain.",
+          text: "Underarm bowling and chucking (throwing the ball, an illegal or suspect action) are not allowed. The square-leg umpire watches the bowler's action and calls it.",
+          items: [
+            "If the square-leg umpire has not called the ball, the batter, striker or non-striker, may leave the ball and appeal to the umpires to check the action.",
+            "A ball the umpire judges to be thrown is a no-ball. The bowler gets a first and final warning for the rest of that innings, and the captain of the fielding side is told.",
+            "If the same bowler throws another ball in that innings, it is a no-ball and the bowler may not bowl again in that innings. The over is finished by another bowler.",
+          ],
+          note: "These steps follow Law 21 of the laws of cricket. The umpires report the matter to the Organizing Committee after the match.",
         },
         {
           text: "A free hit is given for every no-ball. A delivery is a no-ball when:",
@@ -271,18 +268,18 @@ export function buildRulebook(input: RulebookInput): Rulebook {
             "the bowler oversteps the front-foot line;",
             "any fielding restriction is broken;",
             "the bowler does not tell the umpire whether they are bowling over or around the wicket at the start of an over;",
-            "it is the second or later bouncer (above shoulder height) in the same over: only one is allowed per over;",
+            "it is the third or later bouncer (above shoulder height) in the same over: two are allowed per over;",
+            "it pitches outside the side edges of the pitch;",
             "the fielding side chirps, makes a noise or distracts the batter between the start of the bowler's run-up and the delivery;",
             "the fielding side changes the wicketkeeper without telling the umpire;",
-            "the bowler carries on with an illegal action after a warning. The bowler is also reported to the Organizing Committee.",
+            "the umpire judges the ball to have been thrown.",
           ],
         },
         {
           text: "Wides:",
           items: [
             "Wides are judged by the standard laws of cricket.",
-            "Any ball that pitches outside the side edges of the pitch is a wide.",
-            "A bouncer above head height is a wide, and it also counts toward the one-bouncer-an-over limit.",
+            "A bouncer above head height is a wide, and it also counts toward the two-bouncers-an-over limit.",
           ],
         },
       ],
@@ -389,13 +386,14 @@ export function buildRulebook(input: RulebookInput): Rulebook {
       { label: "Teams", value: `${TEAM_COUNT} teams · 2 groups` },
     ],
     highlights: [
-      `${OVERS.league} overs a side in the league and quarterfinals, ${OVERS.semifinal} in the semifinals and final`,
+      `${OVERS.league} overs a side in league matches; ${OVERS.quarterfinal} in the quarterfinals, semifinals and final`,
       "A free hit for every no-ball",
       "No LBW",
       "No leg-byes",
       "Mankading allowed without a warning",
-      "One bouncer an over",
-      "At most 5 fielders outside the circle",
+      "Two bouncers an over",
+      "Powerplay: 2 fielders outside the circle, then 5",
+      "At least 5 bowlers in every innings",
       "Report 30 minutes before your match; the toss is 30 minutes before the start",
     ],
     sections,

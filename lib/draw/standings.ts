@@ -189,10 +189,10 @@ export function computeRows(teams: Team[], scores: MatchScore[], byeTeamIds: str
 
 const EPSILON = 1e-9;
 
+/** Points, then net run rate. Teams level on both are decided by a Super Over, which an organizer records. */
 function compare(a: StandingRow, b: StandingRow): number {
   if (a.points !== b.points) return b.points - a.points;
   if (Math.abs(a.nrr - b.nrr) > EPSILON) return b.nrr - a.nrr;
-  if (a.won !== b.won) return b.won - a.won;
   return 0;
 }
 
@@ -200,27 +200,15 @@ function sameOnAllKeys(a: StandingRow, b: StandingRow): boolean {
   return compare(a, b) === 0;
 }
 
-/** Head-to-head between exactly two level teams, when they met and one won. Returns the winner's id. */
-function headToHead(a: StandingRow, b: StandingRow, scores: MatchScore[]): string | null {
-  const meeting = scores.find(
-    (score) => (score.teamAId === a.teamId && score.teamBId === b.teamId) || (score.teamAId === b.teamId && score.teamBId === a.teamId),
-  );
-  if (!meeting) return null;
-  const winner = matchWinner(meeting);
-  if (!winner) return null;
-  return winner === "a" ? meeting.teamAId : meeting.teamBId;
-}
-
 export type RankedTable = { rows: StandingRow[]; ties: TieNote[] };
 
 /**
- * Ranks teams: points, NRR, wins, then head-to-head for exactly two level teams. Teams still level are
- * ordered by a recorded organizer decision when one exists; otherwise they stay marked unresolved and are
- * listed in `ties` (never ordered by the site).
+ * Ranks teams by points, then net run rate. Teams still level are decided by a Super Over: the order an organizer
+ * records afterwards is used, and until then they stay marked unresolved and are listed in `ties` (never guessed).
  */
 export function rankRows(
   rows: StandingRow[],
-  scores: MatchScore[],
+  _scores: MatchScore[],
   scope: string,
   decisions: OrganizerDecision[] = [],
   /** Number of leading ranks where a tie changes who qualifies or how they are seeded. */
@@ -234,12 +222,7 @@ export function rankRows(
     let end = index + 1;
     while (end < sorted.length && sameOnAllKeys(sorted[index] as StandingRow, sorted[end] as StandingRow)) end += 1;
     let block = sorted.slice(index, end);
-    if (block.length === 2) {
-      const winner = headToHead(block[0] as StandingRow, block[1] as StandingRow, scores);
-      if (winner) block = [...block].sort((x, y) => Number(y.teamId === winner) - Number(x.teamId === winner));
-    }
-    const settledByH2H = block.length === 2 && headToHead(block[0] as StandingRow, block[1] as StandingRow, scores) !== null;
-    if (block.length > 1 && !settledByH2H) {
+    if (block.length > 1) {
       const decision = decisions.find((d) => d.scope === scope && block.every((row) => d.order.includes(row.teamId)));
       if (decision) {
         block = [...block].sort((x, y) => decision.order.indexOf(x.teamId) - decision.order.indexOf(y.teamId));

@@ -54,9 +54,15 @@ test("the rules page is complete, searchable, linked from the menu, and fits a p
   await expect(page.locator(".rb-sec")).toHaveCount(10);
   await expect(page.locator(".rb-rules > li")).toHaveCount(53);
   await expect(page.getByRole("heading", { name: "At a glance" })).toBeVisible();
-  await expect(page.locator(".rb-glance li")).toHaveCount(8);
+  await expect(page.locator(".rb-glance li")).toHaveCount(9);
   await expect(page.locator("#points")).toContainText("QF1: Group A #1 v Group B #4");
   await expect(page.locator("#format")).toContainText("19 teams");
+  await expect(page.locator("#format")).toContainText("from 7:00 AM to 6:00 PM");
+  await expect(page.locator("#format")).toContainText("11:35 AM – 12:00 PM");
+  await expect(page.locator("#match")).toContainText("League matches are 6 overs an innings");
+  await expect(page.locator("#match")).toContainText("Quarterfinals, semifinals and the final are 8 overs an innings");
+  await expect(page.locator("#fielding")).toContainText("Powerplay");
+  await expect(page.getByText(/\bsite\b|website|Fixtures page|substitute fielder|head-to-head/i)).toHaveCount(0);
   await expect(page.locator("#format")).toContainText("9 teams play two of their three on Ground A and 9 play two on Ground B");
   await expect(page.getByText(/NCL 14|November 2025|Jagadeesh/)).toHaveCount(0);
   // Search narrows the rules and keeps their numbers.
@@ -115,7 +121,7 @@ test("organizers edit the rules in Admin › Rules, the public page follows, and
   await expect(page.locator(".re-bar")).toContainText("shows the standard rules");
   await page.goto("/2026/rules");
   await expect(page.locator(".rb-rules > li")).toHaveCount(53);
-  await expect(page.locator(".rb-glance li")).toHaveCount(8);
+  await expect(page.locator(".rb-glance li")).toHaveCount(9);
   await expect(page.getByText("Agreed at the captains' meeting")).toHaveCount(0);
 });
 
@@ -263,7 +269,7 @@ test("the real run needs an organizer, the right password and a confirmation", a
   await expect(page.locator(".dr-row", { has: opener })).toContainText("7:00 AM");
   await expect(page.locator(".dr-views--trial")).toHaveCount(0);
   await expect(page.locator(".dr-match")).toHaveCount(20);
-  await expect(page.locator(".dr-grid-break")).toContainText("Inauguration break · 11:35 AM to 12:30 PM");
+  await expect(page.locator(".dr-grid-break")).toContainText("Inauguration break · 11:35 AM to 12:00 PM");
   await page.getByRole("tab", { name: "Day 2 · Sunday" }).click();
   await expect(page.locator(".dr-match")).toHaveCount(15);
   await page.getByRole("tab", { name: "Day 1 · Saturday" }).click();

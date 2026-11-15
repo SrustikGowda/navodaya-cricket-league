@@ -23,7 +23,8 @@ export const ACTUAL_MATCHES = 35;
 export const FIXTURE_ENTRIES = 36;
 export const QUALIFIERS_PER_GROUP = 4;
 
-export const OVERS = { league: 6, quarterfinal: 6, semifinal: 8, final: 8 } as const;
+/** Only league matches are 6 overs a side. Every knockout match is 8. */
+export const OVERS = { league: 6, quarterfinal: 8, semifinal: 8, final: 8 } as const;
 
 /**
  * Who plays whom. Each position lists its three league opponents. "BYE" is the walkover: it is a fixture entry
@@ -120,14 +121,16 @@ export const DEFAULT_TIMETABLE: Timetable = {
   slotMinutes: 55,
   leagueMinutes: 55,
   breakAfterSlots: 5,
-  breakMinutes: 55,
-  quarterfinalMinutes: 55,
+  // The inauguration runs 11:35 AM to 12:00 PM, and league matches resume at noon.
+  breakMinutes: 25,
+  // Every knockout match is 8 overs, booked for 75 minutes.
+  quarterfinalMinutes: 75,
   semifinalMinutes: 75,
   finalMinutes: 75,
   qf1: hm(11, 15),
-  qf2: hm(12, 20),
-  sf: hm(13, 45),
-  final: hm(15, 30),
+  qf2: hm(12, 30),
+  sf: hm(14, 15),
+  final: hm(16, 0),
 };
 
 /** A team may not play back to back in the league: there is always at least one slot of rest. */
@@ -152,9 +155,7 @@ export const POINTS = { win: 2, tie: 1, noResult: 1, loss: 0, bye: 2 } as const;
 export const TIE_BREAKERS = [
   "Points (win 2, tie or no result 1 each, loss 0, BYE 2)",
   "Net run rate, using all-out innings at the full overs quota",
-  "Most wins",
-  "Result of the match between the two teams, if exactly two are level and they met",
-  "If teams are still level, the organizers decide under these rules. The site never picks a team on its own.",
+  "If teams are still level, a Super Over is played to decide",
 ] as const;
 
 export const QUALIFICATION_RULES = [
@@ -169,8 +170,7 @@ export const BYE_RULES = [
   "A BYE is not a match. It has no runs, wickets, overs or net run rate, and does not count as a match played.",
 ] as const;
 
-export const KNOCKOUT_TIE_RULE =
-  "A tied knockout match is never given a winner by the site. The organizers decide it under the tie-break announced for the day, for example a Super Over, and record the winner with a note.";
+export const KNOCKOUT_TIE_RULE = "A tied knockout match is decided by a Super Over.";
 
 /** Who is seeded from NCL 2025, and the spellings the roster or archive may use for each. */
 export type SeedKey = "champion" | "runner_up" | "semifinalist_1" | "semifinalist_2";
