@@ -328,7 +328,7 @@ function Countdown({ remaining }: { remaining: number }) {
 
 function Opening({ trial, waiting, onStart }: { trial: boolean; waiting: boolean; onStart: () => void }) {
   return (
-    <div className="dr-opening">
+    <div className={waiting ? "dr-opening dr-opening--wait" : "dr-opening"}>
       <div className="dr-opening-rule" aria-hidden="true" />
       <p>Navodaya Cricket League</p>
       <h2>NCL 2026</h2>

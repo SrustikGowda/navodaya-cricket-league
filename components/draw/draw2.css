@@ -811,3 +811,13 @@
 .dr-daysched li.is-break b {
   color: var(--dr-gold);
 }
+
+/* A trial or replay waits for "Start reveal": the opening fades in and then stays, instead of timing out to a black screen. */
+.dr-opening--wait {
+  animation: dr-opening-hold 0.9s ease both;
+}
+@keyframes dr-opening-hold {
+  from {
+    opacity: 0;
+  }
+}

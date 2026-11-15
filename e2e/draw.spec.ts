@@ -42,7 +42,10 @@ test("a trial run plays the whole draw, is marked as unofficial, repeats, and wr
   await expect(stage).toBeVisible();
   await expect(stage.getByText("TRIAL RUN — NOT OFFICIAL").first()).toBeVisible();
   await expect(stage.getByText("/ 19 teams assigned")).toBeVisible();
-  // A trial belongs to one viewer: it waits to be started, and can be paused and stepped.
+  // A trial belongs to one viewer: it waits to be started, however long that takes, and can be paused and stepped.
+  await page.waitForTimeout(5000);
+  await expect(stage.getByRole("button", { name: "Start reveal" })).toBeVisible();
+  await expect(stage.getByRole("heading", { name: "NCL 2026" })).toBeVisible();
   await stage.getByRole("button", { name: "Start reveal" }).click();
   await expect(stage.getByRole("button", { name: "Pause" })).toBeVisible();
   await stage.getByRole("button", { name: "Next team" }).click();
