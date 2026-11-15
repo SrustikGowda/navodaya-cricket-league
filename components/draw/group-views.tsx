@@ -2,8 +2,10 @@
 
 import { useMemo, useState } from "react";
 import { BYE_CODE, BYE_POSITION, GROUP_TEAMS, LEAGUE_MATCHES_BY_GROUP, OPPONENT_TEMPLATE } from "@/lib/draw/config";
+import type { GroundSplit } from "@/lib/draw/grounds";
 import type { DrawPlan, GroupCode, PublicTeam, SeedRole } from "@/lib/draw/types";
 import { SEED_TEXT, slotCodeOf, teamNames, type ViewMatch } from "@/lib/draw/view";
+import { GroundLegend, GroundTiles } from "./ground-share";
 import { MatchCard } from "./match-card";
 import { TeamMark } from "./team-mark";
 
@@ -99,55 +101,74 @@ function SeedTag({ seed }: { seed: SeedRole }) {
 }
 
 /** The two groups at the top of the published page. Group A shows its BYE team plainly. */
-export function GroupCards({ plan, teams, onTeam, onGroup }: { plan: DrawPlan; teams: Map<string, PublicTeam>; onTeam: (teamId: string) => void; onGroup: (group: GroupCode) => void }) {
+export function GroupCards({
+  plan,
+  teams,
+  grounds,
+  onTeam,
+  onGroup,
+}: {
+  plan: DrawPlan;
+  teams: Map<string, PublicTeam>;
+  /** League matches on each ground, per team. */
+  grounds: Map<string, GroundSplit>;
+  onTeam: (teamId: string) => void;
+  onGroup: (group: GroupCode) => void;
+}) {
   const names = teamNames(plan);
   return (
-    <div className="gc-grid">
-      {(["A", "B"] as const).map((group) => {
-        const members = plan.result.assignments.filter((a) => a.group === group).sort((x, y) => x.slot - y.slot);
-        return (
-          <section className="gc" key={group} aria-label={`Group ${group}`}>
-            <header>
-              <div>
-                <h3>Group {group}</h3>
-                <p>
-                  {GROUP_TEAMS[group]} teams{group === "A" ? " + 1 BYE" : ""} · {LEAGUE_MATCHES_BY_GROUP[group]} matches
+    <div className="gc-wrap">
+      <div className="gc-grid">
+        {(["A", "B"] as const).map((group) => {
+          const members = plan.result.assignments.filter((a) => a.group === group).sort((x, y) => x.slot - y.slot);
+          return (
+            <section className="gc" key={group} aria-label={`Group ${group}`}>
+              <header>
+                <div>
+                  <h3>Group {group}</h3>
+                  <p>
+                    {GROUP_TEAMS[group]} teams{group === "A" ? " + 1 BYE" : ""} · {LEAGUE_MATCHES_BY_GROUP[group]} matches
+                  </p>
+                </div>
+                <button type="button" className="dr-chipbtn" onClick={() => onGroup(group)}>
+                  Fixtures
+                </button>
+              </header>
+              <ol>
+                {members.map((a) => {
+                  const name = names.get(a.teamId) ?? a.teamId;
+                  const isBye = a.teamId === plan.bye.teamId;
+                  return (
+                    <li key={a.teamId} className={[a.seed ? "is-seed" : "", isBye ? "is-bye" : ""].filter(Boolean).join(" ")}>
+                      <i className="dr-slot-tag">{slotCodeOf(a)}</i>
+                      <TeamMark name={name} logoUrl={teams.get(a.teamId)?.logoUrl} size={26} />
+                      <button type="button" className="dr-team-btn" onClick={() => onTeam(a.teamId)}>
+                        {name}
+                      </button>
+                      <span className="gc-meta">
+                        {a.seed ? <SeedTag seed={a.seed} /> : null}
+                        {isBye ? <em className="dr-bye-pill">BYE</em> : null}
+                        {grounds.get(a.teamId) ? <GroundTiles split={grounds.get(a.teamId) as GroundSplit} /> : null}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ol>
+              {group === "A" ? (
+                <p className="gc-bye">
+                  <b>BYE · {BYE_POSITION}</b>
+                  <span>
+                    {names.get(plan.bye.teamId)} · 2 matches + 1 BYE. The only BYE in the tournament.
+                  </span>
                 </p>
-              </div>
-              <button type="button" className="dr-chipbtn" onClick={() => onGroup(group)}>
-                Fixtures
-              </button>
-            </header>
-            <ol>
-              {members.map((a) => {
-                const name = names.get(a.teamId) ?? a.teamId;
-                const isBye = a.teamId === plan.bye.teamId;
-                return (
-                  <li key={a.teamId} className={[a.seed ? "is-seed" : "", isBye ? "is-bye" : ""].filter(Boolean).join(" ")}>
-                    <i className="dr-slot-tag">{slotCodeOf(a)}</i>
-                    <TeamMark name={name} logoUrl={teams.get(a.teamId)?.logoUrl} size={26} />
-                    <button type="button" className="dr-team-btn" onClick={() => onTeam(a.teamId)}>
-                      {name}
-                    </button>
-                    {a.seed ? <SeedTag seed={a.seed} /> : null}
-                    {isBye ? <em className="dr-bye-pill">BYE</em> : null}
-                  </li>
-                );
-              })}
-            </ol>
-            {group === "A" ? (
-              <p className="gc-bye">
-                <b>BYE · {BYE_POSITION}</b>
-                <span>
-                  {names.get(plan.bye.teamId)} · 2 matches + 1 BYE. The only BYE in the tournament.
-                </span>
-              </p>
-            ) : (
-              <p className="gc-bye gc-bye--none">No BYE · every team plays 3 matches</p>
-            )}
-          </section>
-        );
-      })}
+              ) : (
+                <p className="gc-bye gc-bye--none">No BYE · every team plays 3 matches</p>
+              )}
+            </section>
+          );
+        })}
+      </div>
+      <GroundLegend />
     </div>
   );
 }
@@ -157,12 +178,14 @@ export function GroupPanel({
   group,
   plan,
   matches,
+  grounds,
   onTeam,
   linkable,
 }: {
   group: GroupCode;
   plan: DrawPlan;
   matches: ViewMatch[];
+  grounds: Map<string, GroundSplit>;
   onTeam: (teamId: string) => void;
   linkable: boolean;
 }) {
@@ -188,10 +211,13 @@ export function GroupPanel({
             const a = bySlot.get(code);
             return (
               <li key={code} className={focus === code ? "is-focus" : undefined} onMouseEnter={() => setFocus(code)} onMouseLeave={() => setFocus(null)}>
-                <button type="button" className="gp-opp-name" onClick={() => a && onTeam(a.teamId)}>
-                  <i className="dr-slot-tag">{code}</i>
-                  <span>{nameOf(code)}</span>
-                </button>
+                <span className="gp-opp-top">
+                  <button type="button" className="gp-opp-name" onClick={() => a && onTeam(a.teamId)}>
+                    <i className="dr-slot-tag">{code}</i>
+                    <span>{nameOf(code)}</span>
+                  </button>
+                  {a && grounds.get(a.teamId) ? <GroundTiles split={grounds.get(a.teamId) as GroundSplit} /> : null}
+                </span>
                 <span className="gp-opp-list">
                   {opponents.map((opponent) => (
                     <span key={opponent} className={opponent === BYE_CODE ? "is-bye" : undefined}>

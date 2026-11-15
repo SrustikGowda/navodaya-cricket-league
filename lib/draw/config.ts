@@ -59,18 +59,25 @@ export type SlotPair = readonly [string, string];
 /** One time slot: the match on Ground A and the match on Ground B. */
 export type SlotRow = readonly [SlotPair, SlotPair];
 
-/** Saturday, in the order NCL 2025 played it. The inauguration break comes after the fifth slot. */
+/**
+ * Saturday, in the order NCL 2025 played it. The inauguration break comes after the fifth slot.
+ *
+ * Ground A is everyone's favourite, so within each slot the two matches are placed to share it out: every team plays
+ * at least one league match on each ground. Nine positions play two of their three on Ground A, nine play two on
+ * Ground B, and the BYE position (A9) plays one on each. Only the ground changed from 2025, in three slots (the
+ * fifth, sixth and tenth); the times, the order and the rest between matches are exactly as before.
+ */
 export const SATURDAY_TEMPLATE: readonly SlotRow[] = [
   [["A1", "A2"], ["B3", "B8"]],
   [["A6", "A7"], ["B4", "B9"]],
   [["B2", "B7"], ["B10", "B1"]],
   [["A3", "A4"], ["A1", "A6"]],
-  [["B4", "B5"], ["B1", "B6"]],
-  [["A3", "A8"], ["B9", "B10"]],
+  [["B1", "B6"], ["B4", "B5"]],
+  [["B9", "B10"], ["A3", "A8"]],
   [["B3", "B4"], ["A4", "A9"]],
   [["A5", "A6"], ["A2", "A7"]],
   [["B8", "B9"], ["B6", "B7"]],
-  [["B2", "B3"], ["A8", "A9"]],
+  [["A8", "A9"], ["B2", "B3"]],
 ];
 
 export const SUNDAY_TEMPLATE: readonly SlotRow[] = [

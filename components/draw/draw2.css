@@ -891,3 +891,84 @@
   color: var(--dr-gold);
   font-weight: 700;
 }
+
+/* ---------- Ground share: a gold A per league match on Ground A, a plain B per match on Ground B ---------- */
+.gc-wrap {
+  display: grid;
+  gap: 0.6rem;
+  margin-bottom: 1.5rem;
+}
+.gc-wrap .gc-grid {
+  margin-bottom: 0;
+}
+/* A seed badge and the ground tiles move under the name when a phone has no room for all three on one line. */
+.gc-wrap .gc li {
+  flex-wrap: wrap;
+  row-gap: 0.2rem;
+  padding-block: 0.3rem;
+}
+.gc-wrap .gc li .dr-team-btn {
+  flex: 1 1 6rem;
+}
+.gc-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+.dr-gt {
+  display: inline-flex;
+  flex: none;
+  gap: 3px;
+}
+.dr-gt i {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  font: 800 0.64rem / 1 var(--font-sans);
+  font-style: normal;
+}
+.dr-gt i.is-a {
+  background: linear-gradient(135deg, #ffe08a, var(--dr-gold-deep));
+  color: #241902;
+}
+.dr-gt i.is-b {
+  border: 1px solid rgba(244, 239, 228, 0.32);
+  color: var(--dr-muted);
+}
+.dr-gt-legend {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0;
+  color: var(--dr-muted);
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+.gp-opp-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.gp-opp-top .gp-opp-name {
+  min-width: 0;
+}
+.dr-team-grounds {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.6rem;
+  margin: 0;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--dr-line);
+  border-radius: 12px;
+  color: var(--dr-muted);
+  font-size: 0.92rem;
+}
+.dr-team-grounds b {
+  color: var(--dr-gold);
+}

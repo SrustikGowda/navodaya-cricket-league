@@ -69,7 +69,7 @@ export function TournamentFormat({ compact = false }: { compact?: boolean }) {
           <span>Final</span>
         </div>
       </div>
-      <figcaption>Every team plays 3 league fixtures. Group A has one BYE, a walkover worth 2 points.</figcaption>
+      <figcaption>Every team plays 3 league fixtures, with at least one on each ground. Group A has one BYE, a walkover worth 2 points.</figcaption>
     </figure>
   );
 }

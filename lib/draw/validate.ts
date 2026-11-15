@@ -19,6 +19,7 @@ import {
   TEAM_COUNT,
 } from "./config";
 import { QF_PAIRINGS, SF_PAIRINGS } from "./bracket";
+import { positionGroundSplit, teamGroundSplit } from "./grounds";
 import { templatePairs } from "./schedule";
 import type { DrawPlan, GroundCode, GroupCode, PlannedMatch, Stage } from "./types";
 
@@ -84,6 +85,13 @@ export function validateTemplates(): string[] {
   if (sat + sun !== LEAGUE_MATCHES) fail(`There must be ${LEAGUE_MATCHES} league matches.`);
   const first = SATURDAY_TEMPLATE[0]?.[0];
   if (!first || first[0] !== "A1" || first[1] !== "A2") fail("The first match must be A1 v A2 on Ground A.");
+
+  // Ground A is shared out: every position plays at least one league match on each ground, the BYE position one on each.
+  for (const [position, split] of positionGroundSplit()) {
+    if (position === BYE_POSITION ? split.A !== 1 || split.B !== 1 : split.A < 1 || split.B < 1) {
+      fail(`${position} plays ${split.A} league matches on Ground A and ${split.B} on Ground B. Every team must play on both grounds.`);
+    }
+  }
   return errors;
 }
 
@@ -169,6 +177,12 @@ export function checkSchedule(matches: TimedMatch[]): ScheduleReport {
   };
   for (const sf of SF_PAIRINGS) after(sf.code, sf.from, "Semifinalists");
   after("F", ["SF1", "SF2"], "Finalists");
+
+  // Ground share. Moving a match to the other ground is allowed (a ground may be unplayable), but the organizers are
+  // told when it leaves a team with every league match on one ground.
+  const shares = teamGroundSplit(matches.map((m) => ({ stage: m.stage, ground: m.ground, teamIds: m.teams })));
+  const oneGround = [...shares.values()].filter((split) => split.A === 0 || split.B === 0).length;
+  if (oneGround > 0) notes.push(`${oneGround} ${oneGround === 1 ? "team plays" : "teams play"} every league match on the same ground.`);
 
   const qfs = matches.filter((m) => m.stage === "quarterfinal");
   const final = byCode.get("F");
@@ -294,6 +308,14 @@ export function validatePlan(plan: DrawPlan): PlanReport {
     if (entries !== 3) fail(`Team ${id} must have exactly three league fixture entries (found ${entries}).`);
     if (own !== wanted) fail(`Team ${id} must play ${wanted} league matches (found ${own}).`);
     if ((faced.get(id)?.size ?? 0) !== own) fail(`Team ${id} meets an opponent twice.`);
+  }
+
+  // Grounds: every team plays league matches on both grounds; the BYE team one on each.
+  const grounds = teamGroundSplit(league.map((m) => ({ stage: m.stage, ground: m.ground, teamIds: [m.teamA.teamId, m.teamB.teamId] })));
+  for (const id of rosterIds) {
+    const split = grounds.get(id) ?? { A: 0, B: 0 };
+    if (split.A < 1 || split.B < 1) fail(`Team ${id} must play league matches on both grounds (Ground A ${split.A}, Ground B ${split.B}).`);
+    if (id === result.byeTeamId && (split.A !== 1 || split.B !== 1)) fail("The BYE team must play one league match on each ground.");
   }
 
   // Days
