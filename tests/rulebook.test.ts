@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DomainError } from "../lib/errors";
 import { clearReadCache } from "../lib/read-cache";
+import { missingStandardRules, placeFor } from "../lib/rulebook-merge";
 import { contentHash, publicRulebook, rulebookEditorState, sanitizeRulebook, saveRulebook, slugify, type RulebookContent } from "../lib/rulebook";
 import { captain, freshDb, organizer } from "./helpers/roster";
 
@@ -129,6 +130,11 @@ test("organizers edit the rules, the public page follows, and saving the standar
   assert.equal(stale.stale, true);
   assert.notEqual(contentHash(stale.standard), contentHash(first.standard), "the standard rules now carry the new dates");
   assert.match(JSON.stringify(stale.content), /28 November/, "the organizers' copy keeps their text until they change it");
+  // The editor lists the standard rules the copy lacks: here the rule with the new dates, and the organizers' own rewording.
+  const lacking = missingStandardRules(stale.standard, stale.content);
+  assert.ok(lacking.some((entry) => entry.ref === "2.1" && /5 December/.test(entry.rule.text)));
+  assert.ok(lacking.some((entry) => entry.sectionId === "dismissals"), "the LBW rule they reworded");
+  assert.ok(!lacking.some((entry) => entry.sectionId === "points"), "untouched sections are not listed");
   const checked = await saveRulebook(db, admin, stale.version, stale.content);
   assert.equal(checked.stale, false);
   assert.equal(checked.version, 2);
@@ -150,4 +156,34 @@ test("organizers edit the rules, the public page follows, and saving the standar
   assert.equal(audit[0]?.payload.sections, 11);
   assert.equal(audit[0]?.payload.rules, 54);
   await db.close();
+});
+
+test("a new standard rule can be brought into the organizers' own wording, in the same place", () => {
+  const standard = {
+    highlights: [],
+    sections: [
+      { id: "general", title: "General", summary: "", rules: [{ text: "One." }, { text: "Two." }] },
+      { id: "format", title: "Format", summary: "", rules: [{ text: "Three fixtures." }, { text: "Every team plays on both grounds." }, { text: "The opener." }] },
+      { id: "awards", title: "Awards", summary: "", rules: [{ text: "Trophies." }] },
+    ],
+  };
+  const copy = {
+    highlights: [],
+    sections: [
+      { id: "general", title: "General", summary: "", rules: [{ text: "One." }, { text: "  two. " }] },
+      { id: "format", title: "Format", summary: "", rules: [{ text: "Three fixtures." }, { text: "The opener." }] },
+    ],
+  };
+  const missing = missingStandardRules(standard, copy);
+  assert.deepEqual(
+    missing.map((entry) => [entry.ref, entry.rule.text]),
+    [
+      ["2.2", "Every team plays on both grounds."],
+      ["3.1", "Trophies."],
+    ],
+    "wording is compared without case or spacing; only rules the copy lacks are listed",
+  );
+  assert.deepEqual(placeFor(copy, missing[0] as (typeof missing)[number]), { sectionIndex: 1, ruleIndex: 1 }, "back in its standard place");
+  assert.equal(placeFor(copy, missing[1] as (typeof missing)[number]), null, "the copy no longer has that section");
+  assert.deepEqual(missingStandardRules(standard, standard), []);
 });

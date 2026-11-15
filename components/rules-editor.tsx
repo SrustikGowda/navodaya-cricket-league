@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { RULEBOOK_LIMITS, RulebookContent, RulebookEditorState } from "@/lib/rulebook";
+import { missingStandardRules, placeFor, type MissingRule } from "@/lib/rulebook-merge";
 import { postJson, RequestError } from "./post-json";
 
 type Limits = typeof RULEBOOK_LIMITS;
@@ -167,6 +168,30 @@ export function RulesEditor({ initial, limits }: { initial: RulebookEditorState;
     setMessage({ kind: "ok", text: "The standard rules are in the editor. Press Save to put them on the website." });
   }
 
+  // After the standard rules change (new dates, a new timetable or a new rule), list the standard rules this copy lacks.
+  const missing = state.edited && state.stale ? missingStandardRules(state.standard, toContent(draft)) : [];
+
+  function addStandard(entry: MissingRule) {
+    const rule: EdRule = {
+      key: nextKey(),
+      text: entry.rule.text,
+      items: (entry.rule.items ?? []).join("\n"),
+      note: entry.rule.note ?? "",
+      showItems: Boolean(entry.rule.items?.length),
+      showNote: Boolean(entry.rule.note),
+    };
+    const place = placeFor(toContent(draft), entry);
+    if (place) {
+      editSection(place.sectionIndex, (section) => ({ ...section, rules: [...section.rules.slice(0, place.ruleIndex), rule, ...section.rules.slice(place.ruleIndex)] }));
+      const key = draft.sections[place.sectionIndex]?.key;
+      if (key) toggle(key, true);
+    } else {
+      const section: EdSection = { key: nextKey(), id: entry.sectionId, title: entry.sectionTitle, summary: "", rules: [rule], tables: [] };
+      editSections((list) => [...list, section]);
+      toggle(section.key, true);
+    }
+  }
+
   const ruleCount = draft.sections.reduce((sum, section) => sum + section.rules.length, 0);
   const allOpen = draft.sections.length > 0 && draft.sections.every((section) => open.has(section.key));
 
@@ -187,10 +212,34 @@ export function RulesEditor({ initial, limits }: { initial: RulebookEditorState;
       </header>
 
       {state.edited && state.stale ? (
-        <p className="re-warn" role="note">
-          The season details or the match timetable have changed since these rules were saved. Check the dates, times and team numbers below, then press Save. You can also start
-          again from the standard rules at the bottom of this page.
-        </p>
+        <div className="re-warn" role="note">
+          <p>
+            The standard rules have changed since your wording was saved: the season details, the match timetable or the rules themselves. Check the dates, times and team numbers
+            below, then press Save. You can also start again from the standard rules at the bottom of this page.
+          </p>
+          {missing.length > 0 ? (
+            <div className="re-missing">
+              <p>
+                <b>In the standard rules but not in yours ({missing.length})</b>
+                <small> Add puts a rule in its standard place. If it replaces one of yours, delete your old one.</small>
+              </p>
+              <ul>
+                {missing.map((entry) => (
+                  <li key={`${entry.ref}-${entry.rule.text}`}>
+                    <span className="re-ref">{entry.ref}</span>
+                    <span>
+                      {entry.rule.text}
+                      <small>{entry.sectionTitle}</small>
+                    </span>
+                    <button type="button" className="re-link" onClick={() => addStandard(entry)} aria-label={`Add standard rule ${entry.ref} to your rules`}>
+                      Add
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
       ) : null}
 
       <p className="re-help">
