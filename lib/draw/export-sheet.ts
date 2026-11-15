@@ -199,7 +199,7 @@ function dayPage(data: SheetData, day: 1 | 2): HTMLCanvasElement {
   if (day === 2) {
     g.fillStyle = MUTED;
     g.font = `500 22px ${FONT}`;
-    g.fillText("Quarterfinals 6 overs a side. Semifinals and the final 8 overs. The final is on Ground A; Ground B is reserved.", 70, Math.min(y + 36, H - 110));
+    g.fillText("League matches are 6 overs a side. Quarterfinals, semifinals and the final are 8 overs. The final is on Ground A; Ground B is reserved.", 70, Math.min(y + 36, H - 110));
   }
   return canvas;
 }

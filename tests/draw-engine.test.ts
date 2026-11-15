@@ -127,20 +127,20 @@ test("the two-day order of play is the NCL 2025 order, with the break and times 
     ],
   );
   const clock = (m: number) => `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}`;
-  assert.deepEqual(leagueSlotStarts(1, DEFAULT_TIMETABLE).map(clock), ["7:00", "7:55", "8:50", "9:45", "10:40", "12:30", "13:25", "14:20", "15:15", "16:10"], "the inauguration break covers 11:35 to 12:30");
+  assert.deepEqual(leagueSlotStarts(1, DEFAULT_TIMETABLE).map(clock), ["7:00", "7:55", "8:50", "9:45", "10:40", "12:00", "12:55", "13:50", "14:45", "15:40"], "the inauguration covers 11:35 to 12:00 and play resumes at noon");
   assert.deepEqual(leagueSlotStarts(2, DEFAULT_TIMETABLE).map(clock), ["7:00", "7:55", "8:50", "9:45"]);
   const slots = timeSlots();
   assert.equal(slots.filter((s) => s.stage === "league" && s.day === 1).length, 20);
   assert.equal(slots.filter((s) => s.stage === "league" && s.day === 2).length, 8);
   const sunday = Object.fromEntries(slots.filter((s) => s.stage !== "league").map((s) => [s.code, `${clock(s.startMinutes)} ${s.ground} ${s.durationMinutes}m`]));
   assert.deepEqual(sunday, {
-    QF1: "11:15 A 55m",
-    QF2: "11:15 B 55m",
-    QF3: "12:20 A 55m",
-    QF4: "12:20 B 55m",
-    SF1: "13:45 A 75m",
-    SF2: "13:45 B 75m",
-    F: "15:30 A 75m",
+    QF1: "11:15 A 75m",
+    QF2: "11:15 B 75m",
+    QF3: "12:30 A 75m",
+    QF4: "12:30 B 75m",
+    SF1: "14:15 A 75m",
+    SF2: "14:15 B 75m",
+    F: "16:00 A 75m",
   });
 });
 
@@ -207,7 +207,7 @@ function assertPlanPromises(plan: DrawPlan, label: string) {
   assert.equal(plan.matches.length + 1, 36, `${label}: 36 fixture entries including the BYE`);
   assert.equal(plan.matches.length, 35);
   for (const m of plan.matches) {
-    assert.equal(m.overs, m.stage === "semifinal" || m.stage === "final" ? 8 : 6, `${m.code} overs`);
+    assert.equal(m.overs, m.stage === "league" ? 6 : 8, `${m.code} overs: only league matches are 6 overs`);
     if (m.stage !== "league") assert.ok(m.teamA.placeholder && m.teamB.placeholder && !m.teamA.teamId && !m.teamB.teamId, `${m.code} holds placeholders`);
   }
 
@@ -406,7 +406,7 @@ test("exactly 19 approved teams are required, and a bad roster is refused before
 test("changing the times never changes who plays whom, and the same rules guard every change", () => {
   const plan = generatePlan({ roster, days: DAYS, entropy: entropyFor(11) });
   const opponents = (matches: DrawPlan["matches"]) => matches.map((m) => `${m.code}:${m.teamA.teamId ?? m.teamA.label}|${m.teamB.teamId ?? m.teamB.label}|${m.ground}`).join(";");
-  const later = { ...DEFAULT_TIMETABLE, saturdayStart: 7 * 60 + 30, sundayStart: 7 * 60 + 30, slotMinutes: 55, qf1: 11 * 60 + 45, qf2: 12 * 60 + 50, sf: 14 * 60 + 15, final: 16 * 60 };
+  const later = { ...DEFAULT_TIMETABLE, saturdayStart: 7 * 60 + 30, sundayStart: 7 * 60 + 30, slotMinutes: 55, qf1: 11 * 60 + 45, qf2: 13 * 60, sf: 14 * 60 + 45, final: 16 * 60 + 30 };
   const moved = applyTimetable(plan.matches, DAYS, later);
   assert.equal(opponents(moved), opponents(plan.matches), "opponents, codes and grounds are untouched");
   assert.notEqual(moved[0]?.startMinutes, plan.matches[0]?.startMinutes);
@@ -494,7 +494,7 @@ function levelRow(teamId: string, group: GroupCode, overrides: Partial<StandingR
   return { teamId, group, played: 3, won: 1, lost: 2, tied: 0, noResult: 0, byes: 0, points: 2, runsFor: 100, ballsFor: 108, runsAgainst: 100, ballsAgainst: 108, nrr: 0, rank: 0, tied_unresolved: false, ...overrides };
 }
 
-test("teams level on every published criterion are flagged for the organizers, never picked silently", () => {
+test("teams level on points and net run rate are flagged for a Super Over, never picked silently", () => {
   const rows = [levelRow("t1", "A", { points: 6, won: 3, nrr: 1 }), levelRow("t2", "A"), levelRow("t3", "A"), levelRow("t4", "A", { points: 0, won: 0 })];
   const table = rankRows(rows, [], "group:A", [], 4);
   assert.equal(table.rows[0]?.teamId, "t1");
@@ -509,8 +509,20 @@ test("teams level on every published criterion are flagged for the organizers, n
   );
   assert.deepEqual(decided.rows.map((row) => row.teamId), ["t1", "t3", "t2", "t4"]);
   assert.equal(decided.ties.length, 0);
+  // Only points and net run rate rank teams. Most wins and the result between two teams no longer break a tie.
   const met = score("p", "q", "a", "h");
-  assert.equal(rankRows([levelRow("q", "A"), levelRow("p", "A")], [met], "group:A").rows[0]?.teamId, "p");
+  const metBefore = rankRows([levelRow("q", "A"), levelRow("p", "A")], [met], "group:A");
+  assert.equal(metBefore.ties.length, 1, "they met and p won, but a Super Over decides");
+  assert.ok(metBefore.rows.every((row) => row.tied_unresolved));
+  const moreWins = rankRows([levelRow("m", "A", { won: 2, tied: 0 }), levelRow("n", "A", { won: 1 })], [], "group:A");
+  assert.equal(moreWins.ties.length, 1, "more wins does not separate teams level on points and net run rate");
+  const closeNrr = rankRows([levelRow("x", "A", { nrr: 0.5 }), levelRow("y", "A", { nrr: 0.25 })], [], "group:A");
+  assert.deepEqual(closeNrr.rows.map((row) => row.teamId), ["x", "y"], "net run rate still ranks teams level on points");
+  assert.equal(closeNrr.ties.length, 0);
+  // The Super Over's result is recorded as an order, and the table uses it.
+  const afterSuperOver = rankRows([levelRow("q", "A"), levelRow("p", "A")], [met], "group:A", [{ scope: "group:A", order: ["q", "p"] }]);
+  assert.deepEqual(afterSuperOver.rows.map((row) => row.teamId), ["q", "p"]);
+  assert.equal(afterSuperOver.ties.length, 0);
 });
 
 /** Plays the whole 28-match league: team strength decides most results, with some ties and no results. */

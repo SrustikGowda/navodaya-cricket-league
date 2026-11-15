@@ -174,7 +174,7 @@ export function Rulebook({ book, notes, editHref = null }: { book: Book; notes: 
             );
           })}
           <p className="rb-foot">
-            These rules can be updated by the Organizing Committee before the tournament. The full schedule is on the <Link href="/2026/fixtures">Fixtures page</Link>.
+            These rules can be updated by the Organizing Committee before the tournament. See <Link href="/2026/fixtures">Fixtures</Link> for the full schedule.
           </p>
         </div>
       </div>

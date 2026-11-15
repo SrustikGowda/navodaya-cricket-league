@@ -51,7 +51,7 @@ export function DrawDesk({ official, fixtures, ties, leagueResults, roster, pass
       {ties.length > 0 ? (
         <section className="stack">
           <h2>Ties that need a decision</h2>
-          <p className="quiet">These teams are level on points, net run rate, wins and head-to-head. The site will not pick between them. Record the order you decided, and why.</p>
+          <p className="quiet">These teams are level on points and net run rate, so a Super Over decides. Record the order after the Super Over, and add a note.</p>
           {ties.map((tie) => <TieForm key={`${tie.scope}-${tie.teamIds.join()}`} tie={tie} />)}
         </section>
       ) : null}
