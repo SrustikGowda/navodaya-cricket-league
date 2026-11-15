@@ -38,6 +38,7 @@ export function OpponentWeb({
   opener,
   focus,
   animate = false,
+  hold = false,
   onPick,
 }: {
   group: GroupCode;
@@ -48,6 +49,8 @@ export function OpponentWeb({
   /** A position whose three fixtures are highlighted. */
   focus?: string | null;
   animate?: boolean;
+  /** Keep the lines hidden until `animate` turns on, so an animation that starts later does not flash the finished picture first. */
+  hold?: boolean;
   onPick?: (position: string) => void;
 }) {
   const codes = useMemo(() => [...Object.keys(OPPONENT_TEMPLATE[group]), ...(group === "A" ? [BYE_CODE] : [])], [group]);
@@ -59,7 +62,7 @@ export function OpponentWeb({
   const edges = groupEdges(group);
   const mine = focus ? new Set(edges.filter(([a, b]) => a === focus || b === focus).flatMap(([a, b]) => [a, b])) : null;
   return (
-    <svg className={animate ? "gw gw--draw" : "gw"} viewBox={`0 0 ${SIZE} ${SIZE}`} role="img" aria-label={`Who plays whom in Group ${group}. Every position has three fixtures.`}>
+    <svg className={animate ? "gw gw--draw" : hold ? "gw gw--hold" : "gw"} viewBox={`0 0 ${SIZE} ${SIZE}`} role="img" aria-label={`Who plays whom in Group ${group}. Every position has three fixtures.`}>
       {edges.map(([a, b], index) => {
         const p = point(a);
         const q = point(b);

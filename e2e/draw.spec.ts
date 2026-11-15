@@ -24,6 +24,21 @@ test("the 19-team, two-group format is shown, and nothing from the old format is
   await expect(format).toContainText("Every team plays 3 league fixtures");
   await expect(page.getByRole("button", { name: "TRIAL RUN" })).toBeVisible();
   await expect(page.getByRole("button", { name: "REAL RUN" })).toBeVisible();
+  // How the fixtures work, shown with positions only: a ring of A1..A9 plus the BYE, and one of B1..B10.
+  const how = page.locator(".dr-how");
+  await how.scrollIntoViewIfNeeded();
+  await expect(how.locator(".gw")).toHaveCount(2);
+  await expect(how.locator(".gw").nth(0).locator(".gw-node")).toHaveCount(10);
+  await expect(how.locator(".gw").nth(1).locator(".gw-node")).toHaveCount(10);
+  await expect(how.locator(".gw").nth(0).locator(".gw-edge")).toHaveCount(14);
+  await expect(how.locator(".gw").nth(1).locator(".gw-edge")).toHaveCount(15);
+  await expect(how.getByText(/^A1 plays A2, A5 and A6\. A1 v A2 is the opening match\.$/)).toBeVisible();
+  await how.locator(".gw-node").filter({ hasText: /^A9$/ }).click();
+  await expect(how.getByText("A9 plays A4, A8 and a BYE.")).toBeVisible();
+  await how.locator(".gw-node").filter({ hasText: /^B6$/ }).click();
+  await expect(how.getByText("B6 plays B1, B5 and B7.")).toBeVisible();
+  // No team names there: it explains the idea, it does not hint at the result.
+  await expect(how.getByText(/4s-11|RCB United|Junglees/)).toHaveCount(0);
   // No trace of the old 18-team, three-group format, and no picture of it.
   await expect(page.getByText(/Group C|sub-pool|wildcard|third-placed|18 teams|34 (matches|fixtures)/i)).toHaveCount(0);
   await expect(page.locator('img[src*="format-v1"]')).toHaveCount(0);
@@ -34,7 +49,8 @@ test("the 19-team, two-group format is shown, and nothing from the old format is
 test("a trial run plays the whole draw, is marked as unofficial, repeats, and writes nothing", async ({ page }) => {
   const writes: string[] = [];
   page.on("request", (request) => {
-    if (request.method() !== "GET") writes.push(`${request.method()} ${new URL(request.url()).pathname}`);
+    // The visit counter only touches the analytics table, never any draw or fixture data.
+    if (request.method() !== "GET" && new URL(request.url()).pathname !== "/api/track") writes.push(`${request.method()} ${new URL(request.url()).pathname}`);
   });
   await page.goto("/2026/fixtures");
   await page.getByRole("button", { name: "TRIAL RUN" }).click();
@@ -204,7 +220,7 @@ test("the real run needs an organizer, the right password and a confirmation", a
   // Reload and a fresh visitor see the same draw; nothing is written. Replaying never calls the server.
   const writes: string[] = [];
   page.on("request", (request) => {
-    if (request.method() !== "GET") writes.push(`${request.method()} ${new URL(request.url()).pathname}`);
+    if (request.method() !== "GET" && new URL(request.url()).pathname !== "/api/track") writes.push(`${request.method()} ${new URL(request.url()).pathname}`);
   });
   await page.reload();
   // Within a minute of publication a reload rejoins the shared reveal in progress; close it to look at the page.
@@ -258,6 +274,28 @@ test("the real run needs an organizer, the right password and a confirmation", a
 test("an admin marks fees, picks the knockouts, enters awards, then deletes the run and redoes it", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop", "Runs once, after the official draw.");
   expect((await page.request.post("/api/admin/password", { data: { password: "playwright-admin" } })).status()).toBe(200);
+
+  // Analytics: the visits and trial runs made by the earlier tests were counted. The organizer's own visits are not.
+  const number = async (id: string) => Number(await page.locator(`.an-card[data-card="${id}"] strong`).innerText());
+  await page.goto("/admin/analytics?range=all");
+  await expect(page.getByRole("heading", { name: "Analytics", exact: true })).toBeVisible();
+  const views = await number("views");
+  expect(views).toBeGreaterThan(0);
+  expect(await number("trial")).toBeGreaterThan(0);
+  expect(await number("visitors")).toBeGreaterThan(0);
+  await expect(page.locator("tr", { hasText: "/2026/fixtures" }).first()).toBeVisible();
+  await expect(page.locator("tr[data-action=trial_run]")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Last 7 days" })).toBeVisible();
+  await page.getByRole("link", { name: "Today" }).click();
+  await expect(page).toHaveURL(/range=today/);
+  for (const path of ["/2026", "/2026/teams", "/2026/fixtures"]) {
+    await page.goto(path);
+    await page.waitForTimeout(400);
+  }
+  await page.goto("/admin/analytics?range=all");
+  expect(await number("views")).toBe(views);
+  const track = await page.request.post("/api/track", { data: { type: "view", path: "/2026/rules", device: "desktop" }, headers: { origin: "http://127.0.0.1:3458" } });
+  expect((await track.json()).counted).toBe(false);
 
   // Entry fee: tick the team in Settings › Payments, and it shows on the public team card.
   await page.goto("/admin/settings");

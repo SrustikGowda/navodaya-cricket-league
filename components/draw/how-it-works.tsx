@@ -1,0 +1,78 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { BYE_CODE, GROUP_TEAMS, LEAGUE_MATCHES_BY_GROUP, OPPONENT_TEMPLATE } from "@/lib/draw/config";
+import type { GroupCode, SeedRole } from "@/lib/draw/types";
+import { OpponentWeb } from "./group-views";
+
+const SEEDS: Record<GroupCode, Record<string, SeedRole>> = { A: { A1: "champion" }, B: {} };
+
+function sentence(code: string): string {
+  const [first, second, third] = OPPONENT_TEMPLATE[code.startsWith("A") ? "A" : "B"][code] ?? [];
+  const list = [first, second, third].filter(Boolean).map((position) => (position === BYE_CODE ? "a BYE" : position));
+  const text = list.length === 3 ? `${list[0]}, ${list[1]} and ${list[2]}` : list.join(", ");
+  return `${code} plays ${text}.${code === "A1" ? " A1 v A2 is the opening match." : ""}`;
+}
+
+/**
+ * The idea of the draw before it happens, using only positions. Teams are drawn into positions; every position then
+ * plays the same three opponents, taken from last year's pattern. The lines draw themselves when the section scrolls into view.
+ */
+export function HowFixturesWork() {
+  const [focus, setFocus] = useState<string>("A1");
+  const [seen, setSeen] = useState(false);
+  const ref = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const node = ref.current;
+    if (!node || typeof IntersectionObserver === "undefined") {
+      const timer = window.setTimeout(() => setSeen(true), 0);
+      return () => window.clearTimeout(timer);
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setSeen(true);
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.25 },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  const pick = (code: string) => setFocus((current) => (current === code ? "" : code));
+  return (
+    <section className="dr-how" id="how" ref={ref} aria-labelledby="dr-how-title">
+      <div className="dr-about-head">
+        <h2 id="dr-how-title">How the fixtures are made</h2>
+      </div>
+      <p className="dr-how-lead">
+        The draw puts teams into positions, A1, A2 and so on. Every position plays the same three opponents, set from last year&apos;s pattern. So the draw decides who sits where, and the fixtures follow.
+      </p>
+      <div className="dr-how-grid">
+        {(["A", "B"] as const).map((group) => {
+          const active = focus.startsWith(group) ? focus : null;
+          return (
+            <figure className="dr-how-card" key={group}>
+              <figcaption>
+                <b>Group {group}</b>
+                <span>
+                  {GROUP_TEAMS[group]} teams{group === "A" ? " + 1 BYE" : ""} · {LEAGUE_MATCHES_BY_GROUP[group]} matches
+                </span>
+              </figcaption>
+              <OpponentWeb group={group} seeds={SEEDS[group]} opener={group === "A" ? ["A1", "A2"] : undefined} focus={active} animate={seen} hold={!seen} onPick={pick} />
+              <p className="dr-how-line" aria-live="polite">
+                {active ? sentence(active) : "Tap a position to see its three opponents."}
+              </p>
+            </figure>
+          );
+        })}
+      </div>
+      <p className="dr-how-foot">
+        Each line is one match. The dashed green line is the BYE, a walkover worth 2 points that one team in Group A receives. The gold position is the defending champion, who always plays the opening match.
+      </p>
+    </section>
+  );
+}

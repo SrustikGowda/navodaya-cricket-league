@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { track } from "@/components/analytics-tracker";
 import { compareBatch } from "@/lib/batch-order";
 import { BYE_RULES, KNOCKOUT_TIE_RULE, LEAGUE_MATCHES, QUALIFICATION_RULES, TIE_BREAKERS, type Timetable } from "@/lib/draw/config";
 import { renderShareCard } from "@/lib/draw/share-image";
@@ -136,15 +137,20 @@ export function ScheduleViews({
     window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
   }, [official, tab, team, teamMap]);
 
+  const selectTab = useCallback((id: TabId) => {
+    setTab(id);
+    track(`tab_${id}`);
+  }, []);
+
   const openTeam = useCallback((teamId: string) => {
     setTeam(teamId);
-    setTab("team");
+    selectTab("team");
     window.requestAnimationFrame(() => rootRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
-  }, []);
+  }, [selectTab]);
   const openGroup = useCallback((group: GroupCode) => {
-    setTab(group === "A" ? "groupA" : "groupB");
+    selectTab(group === "A" ? "groupA" : "groupB");
     window.requestAnimationFrame(() => rootRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
-  }, []);
+  }, [selectTab]);
 
   const day: 1 | 2 = tab === "day2" ? 2 : 1;
   const listed = useMemo(() => applyFilters(matches, filters, day), [matches, filters, day]);
@@ -159,6 +165,7 @@ export function ScheduleViews({
     try {
       const { downloadSheet } = await import("@/lib/draw/export-sheet");
       await downloadSheet(format, { plan, matches, bye, official, drawRef: drawRef ?? null, names });
+      track(format === "png" ? "export_png" : "export_pdf");
       setExportNote(format === "png" ? "Image saved." : "PDF saved.");
     } catch (error) {
       setExportNote(error instanceof Error ? error.message : "The file could not be created.");
@@ -182,7 +189,7 @@ export function ScheduleViews({
               aria-selected={tab === item.id}
               aria-controls="dr-panel"
               className={tab === item.id ? "is-active" : undefined}
-              onClick={() => setTab(item.id)}
+              onClick={() => selectTab(item.id)}
               aria-label={item.label}
             >
               <span className="dr-tab-long">{item.label}</span>
@@ -469,6 +476,7 @@ function TeamPanel({
       anchor.download = file.name;
       anchor.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 4000);
+      track("team_image");
       setNote("Image saved. Send it on WhatsApp from your gallery.");
     } catch (error) {
       setNote(error instanceof Error ? error.message : "The image could not be created.");
@@ -484,6 +492,7 @@ function TeamPanel({
       const file = await makeFile();
       if (navigator.canShare?.({ files: [file] })) {
         await navigator.share({ files: [file], title: `${name} · NCL 2026`, text: official ? link() : "Trial draw - not official" });
+        track("team_image");
       } else {
         await saveImage();
       }
@@ -540,7 +549,7 @@ function TeamPanel({
         </button>
         {official ? (
           <>
-            <a className="dr-btn dr-btn--ghost dr-btn--sm" href={`https://wa.me/?text=${encodeURIComponent(`${summary()}\n${link()}`)}`} target="_blank" rel="noopener noreferrer">
+            <a className="dr-btn dr-btn--ghost dr-btn--sm" href={`https://wa.me/?text=${encodeURIComponent(`${summary()}\n${link()}`)}`} target="_blank" rel="noopener noreferrer" onClick={() => track("whatsapp")}>
               Share on WhatsApp
             </a>
             <button

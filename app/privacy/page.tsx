@@ -15,6 +15,7 @@ export default function PrivacyPage() {
         <p>Email addresses, payment references, receipts and the audit log are not public. Phone numbers are not placed on share cards.</p>
         <p>Receipts stay in private storage. A payment screenshot is not treated as proof that money arrived.</p>
         <p>The optional “my team” choice is stored in this browser only. It is not an account.</p>
+        <p>The organizers count how many people open each page and use a few features, such as the practice draw, to see what is useful. This does not store your IP address, name or any account, and it is not shared. Turn on “Do Not Track” in your browser and nothing is counted.</p>
         <p>No Aadhaar, PAN or other identity document is requested.</p>
       </div>
     </PublicShell>

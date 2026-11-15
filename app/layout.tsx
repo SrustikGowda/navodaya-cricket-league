@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { AnalyticsTracker } from "@/components/analytics-tracker";
 import { NavTrail } from "@/components/back-button";
 import "./globals.css";
 import { siteUrl } from "@/lib/site-url";
@@ -25,6 +26,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <body>
         <a className="skip" href="#content">Skip to content</a>
         <NavTrail />
+        <AnalyticsTracker />
         {children}
       </body>
     </html>
