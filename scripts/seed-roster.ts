@@ -14,7 +14,7 @@ if (process.env.DATABASE_URL || process.env.NODE_ENV === "production") {
 const NAMES = [
   "4s-11 (2004–2011)", "RCB United", "Jnv Junglees", "Balehonnur Bulls (2005–12)", "Royal Challengers Balehonnur", "GTR",
   "The Elite", "TWENTY SIXers", "IX-ELEVENS", "Champions-11", "Balehonnur Blasters", "Navodaya Warriors", "Kalpavruksha XI",
-  "Malnad Mavericks", "Sahyadri Strikers", "Tunga Titans", "Bhadra Blasters", "Hemavathi Hawks",
+  "Malnad Mavericks", "Sahyadri Strikers", "Tunga Titans", "Bhadra Blasters", "Hemavathi Hawks", "Spartans XI",
 ];
 
 async function main() {
@@ -38,7 +38,7 @@ async function main() {
     }
     // A sample entry fee so "mark fee paid" can be tried locally.
     await db.execute("update seasons set fee_paise = 400000 where year = 2026 and fee_paise is null");
-    console.log("Added 18 sample approved teams and a sample entry fee.");
+    console.log("Added 19 sample approved teams and a sample entry fee.");
   }
   await db.close();
 }

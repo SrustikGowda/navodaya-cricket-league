@@ -22,8 +22,10 @@ export default async function TeamPage({ params }: { params: Promise<{ slug: str
   if (!team) notFound();
   const logo = team.logoPath?.split(":").at(-1);
   const placement = (
-    await (await getDb()).query<{ code: string; sub_pool: number; slot: number }>(
-      `select g.code, gm.sub_pool, gm.slot from group_memberships gm join groups g on g.id = gm.group_id
+    await (await getDb()).query<{ code: string; slot: number; has_bye: boolean }>(
+      `select g.code, gm.slot,
+         exists (select 1 from fixtures f where f.draw_id = d.id and f.is_bye and f.team_a_registration_id = gm.registration_id) as has_bye
+       from group_memberships gm join groups g on g.id = gm.group_id
        join draws d on d.id = g.draw_id and d.status = 'published'
        where gm.registration_id = $1 and g.code is not null`,
       [team.id],
@@ -36,7 +38,7 @@ export default async function TeamPage({ params }: { params: Promise<{ slug: str
       {team.feeStatus !== "none" ? <p><FeeBadge status={team.feeStatus} long /></p> : null}
       {placement ? (
         <p className="quiet">
-          Group {placement.code} · Sub-pool {placement.sub_pool} · {placement.code}{placement.slot} ·{" "}
+          Group {placement.code} · {placement.code}{placement.slot}{placement.has_bye ? " · 2 matches + 1 BYE" : ""} ·{" "}
           <Link href={`/2026/fixtures?team=${team.slug}`}>See this team&apos;s fixtures and share them</Link>
         </p>
       ) : null}

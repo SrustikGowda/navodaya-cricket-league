@@ -2,10 +2,13 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { LEAGUE_MATCHES, type Timetable } from "@/lib/draw/config";
 import { oversText, parseOvers, type TieNote } from "@/lib/draw/standings";
 import type { LiveFixture } from "@/lib/draw/types";
 import { isoToMinutes, timeText } from "@/lib/draw/view";
 import { AdminFeedback, useAdminPost } from "../admin-post";
+import { postJson } from "../post-json";
 
 type Props = {
   official: { ref: string; publishedAt: string; planHash: string; seed: string } | null;
@@ -14,9 +17,14 @@ type Props = {
   leagueResults: number;
   roster: { id: string; name: string }[];
   passwordConfigured: boolean;
+  timetable: Timetable | null;
+  confirmedAt: string | null;
+  /** True when every league match has a result and no tie is waiting for a decision, so the standings can be confirmed. */
+  canConfirm: boolean;
+  leagueComplete: boolean;
 };
 
-export function DrawDesk({ official, fixtures, ties, leagueResults, roster, passwordConfigured }: Props) {
+export function DrawDesk({ official, fixtures, ties, leagueResults, roster, passwordConfigured, timetable, confirmedAt, canConfirm, leagueComplete }: Props) {
   if (!official) {
     return (
       <div className="stack">
@@ -35,8 +43,10 @@ export function DrawDesk({ official, fixtures, ties, leagueResults, roster, pass
           <strong>Official draw {official.ref}</strong> published {new Date(official.publishedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST.
         </p>
         <p className="quiet">Plan hash {official.planHash.slice(0, 16)}… · draw entropy {official.seed.slice(0, 12)}… (published so anyone can replay the draw).</p>
-        <p className="quiet">League results entered: {leagueResults} of 27. The quarterfinals fill themselves when the 27th result is in and no tie needs a decision.</p>
+        <p className="quiet">League results entered: {leagueResults} of {LEAGUE_MATCHES}. The quarterfinals are filled only after you confirm the final standings below.</p>
       </section>
+
+      <StandingsConfirm leagueComplete={leagueComplete} canConfirm={canConfirm} confirmedAt={confirmedAt} tiesWaiting={ties.length} />
 
       {ties.length > 0 ? (
         <section className="stack">
@@ -60,8 +70,11 @@ export function DrawDesk({ official, fixtures, ties, leagueResults, roster, pass
       <section className="stack">
         <h2>League match results</h2>
         <p className="quiet">Scores feed the group tables, net run rate and the bracket. Overs are written the cricket way: 5.3 is five overs and three balls. An all-out innings counts at the full overs quota for net run rate.</p>
-        {fixtures.filter((fixture) => fixture.stage === "league").map((fixture) => <ScoreRow key={fixture.id} fixture={fixture} />)}
+        {fixtures.filter((fixture) => fixture.stage === "league" && !fixture.isBye).map((fixture) => <ScoreRow key={fixture.id} fixture={fixture} />)}
       </section>
+
+      {timetable ? <TimetableForm timetable={timetable} /> : null}
+      <MoveMatchForm fixtures={fixtures.filter((fixture) => !fixture.isBye && fixture.status !== "completed" && fixture.status !== "in_progress")} />
 
       <p className="quiet">
         Need to redo the draw? An admin can delete the official run in <Link href="/admin/settings#official-run">Settings</Link>, then run the Real Run again from the Fixtures page.
@@ -257,5 +270,205 @@ function KnockoutRow({ fixture, roster }: { fixture: LiveFixture; roster: { id: 
       </button>
       <AdminFeedback message={form.message ? "Saved." : ""} error={form.error} />
     </form>
+  );
+}
+
+/** Confirming the final group standings is what lets the quarterfinals fill in. Nothing fills in by itself. */
+function StandingsConfirm({ leagueComplete, canConfirm, confirmedAt, tiesWaiting }: { leagueComplete: boolean; canConfirm: boolean; confirmedAt: string | null; tiesWaiting: number }) {
+  const form = useAdminPost();
+  return (
+    <section className="stack" id="confirm">
+      <h2>Confirm the final standings</h2>
+      {!leagueComplete ? (
+        <p className="quiet">Available once all {LEAGUE_MATCHES} league matches have a result. The top 4 of each group will then go into the quarterfinals.</p>
+      ) : tiesWaiting > 0 ? (
+        <p className="alert" role="alert">Record a decision for each tie below first.</p>
+      ) : (
+        <>
+          <p>
+            {confirmedAt
+              ? `Confirmed ${new Date(confirmedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST. The quarterfinals are filled. If you correct a league score afterwards, confirm again so any change is checked.`
+              : "Check the group tables on the Fixtures page, then confirm. The 8 qualifiers go into the quarterfinals: Group A #1 v Group B #4, A #2 v B #3, A #3 v B #2, A #4 v B #1."}
+          </p>
+          <button className="button" type="button" disabled={!canConfirm || form.pending} onClick={() => void form.submit("draw-confirm-standings", {})}>
+            {form.pending ? "Confirming" : confirmedAt ? "Confirm again" : "Confirm standings and fill the quarterfinals"}
+          </button>
+          <AdminFeedback message={form.message ? "Confirmed." : ""} error={form.error} />
+        </>
+      )}
+    </section>
+  );
+}
+
+const toClock = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+const fromClock = (value: string) => {
+  const [h, m] = value.split(":").map(Number);
+  return (h ?? 0) * 60 + (m ?? 0);
+};
+
+type Preview = { changes: { code: string; from: string; to: string; fromGround: string; toGround: string }[]; errors: string[]; notes: string[] };
+
+/** Times and lengths for the two days. Opponents never change; the same clash, rest and daylight rules as the draw apply. */
+function TimetableForm({ timetable }: { timetable: Timetable }) {
+  const router = useRouter();
+  const [preview, setPreview] = useState<Preview | null>(null);
+  const [error, setError] = useState("");
+  const [done, setDone] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const read = (form: HTMLFormElement) => {
+    const data = new FormData(form);
+    const clock = (name: string) => fromClock(String(data.get(name) ?? "00:00"));
+    const num = (name: string) => Number(data.get(name));
+    return {
+      saturdayStart: clock("saturdayStart"),
+      sundayStart: clock("sundayStart"),
+      slotMinutes: num("slotMinutes"),
+      leagueMinutes: num("leagueMinutes"),
+      breakAfterSlots: num("breakAfterSlots"),
+      breakMinutes: num("breakMinutes"),
+      qf1: clock("qf1"),
+      qf2: clock("qf2"),
+      sf: clock("sf"),
+      final: clock("final"),
+      quarterfinalMinutes: num("quarterfinalMinutes"),
+      semifinalMinutes: num("semifinalMinutes"),
+      finalMinutes: num("finalMinutes"),
+    };
+  };
+
+  async function run(action: "draw-preview-times" | "draw-apply-times", form: HTMLFormElement) {
+    setBusy(true);
+    setError("");
+    setDone("");
+    try {
+      const data = new FormData(form);
+      const result = (await postJson("/api/admin", { action, timetable: read(form), note: String(data.get("note") ?? "") })) as unknown as Preview;
+      setPreview(result);
+      if (action === "draw-apply-times") {
+        setDone(`Done. ${result.changes.length} matches were moved. The public pages show the new times now.`);
+        router.refresh();
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Nothing was changed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="stack" id="timetable">
+      <h2>Match times</h2>
+      <p className="quiet">
+        Change the start times, slot length, the Saturday inauguration break or the knockout times. Who plays whom does not change. Matches already played keep their times. Check the preview before you apply.
+      </p>
+      <form
+        className="stack"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void run("draw-preview-times", event.currentTarget);
+        }}
+      >
+        <div className="set-grid">
+          <label className="field">Saturday first match<input className="text-input" type="time" name="saturdayStart" defaultValue={toClock(timetable.saturdayStart)} required /></label>
+          <label className="field">Sunday first match<input className="text-input" type="time" name="sundayStart" defaultValue={toClock(timetable.sundayStart)} required /></label>
+          <label className="field">Minutes between league matches<input className="text-input" type="number" name="slotMinutes" defaultValue={timetable.slotMinutes} min={30} max={120} required /></label>
+          <label className="field">Length booked for a league match (minutes)<input className="text-input" type="number" name="leagueMinutes" defaultValue={timetable.leagueMinutes} min={20} max={120} required /></label>
+          <label className="field">Inauguration break after this many Saturday slots<input className="text-input" type="number" name="breakAfterSlots" defaultValue={timetable.breakAfterSlots} min={0} max={10} required /></label>
+          <label className="field">Break length (minutes, 0 for none)<input className="text-input" type="number" name="breakMinutes" defaultValue={timetable.breakMinutes} min={0} max={180} required /></label>
+          <label className="field">Quarterfinals 1 and 2<input className="text-input" type="time" name="qf1" defaultValue={toClock(timetable.qf1)} required /></label>
+          <label className="field">Quarterfinals 3 and 4<input className="text-input" type="time" name="qf2" defaultValue={toClock(timetable.qf2)} required /></label>
+          <label className="field">Semifinals<input className="text-input" type="time" name="sf" defaultValue={toClock(timetable.sf)} required /></label>
+          <label className="field">Final<input className="text-input" type="time" name="final" defaultValue={toClock(timetable.final)} required /></label>
+          <label className="field">Quarterfinal length (minutes)<input className="text-input" type="number" name="quarterfinalMinutes" defaultValue={timetable.quarterfinalMinutes} min={20} max={120} required /></label>
+          <label className="field">Semifinal length (minutes)<input className="text-input" type="number" name="semifinalMinutes" defaultValue={timetable.semifinalMinutes} min={20} max={150} required /></label>
+          <label className="field">Final length (minutes)<input className="text-input" type="number" name="finalMinutes" defaultValue={timetable.finalMinutes} min={20} max={150} required /></label>
+          <label className="field wide">Reason (shown to the public as the update)<input className="text-input" name="note" placeholder="For example: start half an hour later" maxLength={200} /></label>
+        </div>
+        <div className="set-actions">
+          <button className="button secondary" type="submit" disabled={busy}>{busy ? "Checking" : "Preview the change"}</button>
+          {preview && preview.errors.length === 0 && preview.changes.length > 0 ? (
+            <button
+              className="button"
+              type="button"
+              disabled={busy}
+              onClick={(event) => {
+                const form = (event.currentTarget as HTMLButtonElement).form;
+                if (form && window.confirm(`Move ${preview.changes.length} matches? The public pages show the new times straight away. Who plays whom does not change.`)) void run("draw-apply-times", form);
+              }}
+            >
+              Apply: move {preview.changes.length} matches
+            </button>
+          ) : null}
+        </div>
+      </form>
+      {error ? <p className="alert" role="alert">{error}</p> : null}
+      {done ? <p className="note" role="status">{done}</p> : null}
+      {preview ? (
+        <div className="stack" aria-live="polite">
+          {preview.errors.length > 0 ? (
+            <div className="alert" role="alert">
+              <b>These times break the rules, so nothing can be applied:</b>
+              <ul>{preview.errors.map((message) => <li key={message}>{message}</li>)}</ul>
+            </div>
+          ) : preview.changes.length === 0 ? (
+            <p className="quiet">These are the times already in use. Nothing would change.</p>
+          ) : (
+            <details open>
+              <summary>{preview.changes.length} matches would move</summary>
+              <ul>{preview.changes.map((change) => <li key={change.code}>{change.code}: {change.from} → {change.to}{change.fromGround !== change.toGround ? ` (Ground ${change.fromGround} → ${change.toGround})` : ""}</li>)}</ul>
+            </details>
+          )}
+          {preview.notes.map((note) => <p key={note} className="quiet">{note}</p>)}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+/** One match to another time or ground, under the same rules. */
+function MoveMatchForm({ fixtures }: { fixtures: LiveFixture[] }) {
+  const form = useAdminPost();
+  const [code, setCode] = useState(fixtures[0]?.code ?? "");
+  const current = fixtures.find((fixture) => fixture.code === code);
+  return (
+    <section className="stack" id="move">
+      <h2>Move one match</h2>
+      <p className="quiet">For a delay or a pitch problem. The match keeps its teams; only its time and ground change, and the public card says it was rescheduled.</p>
+      <form
+        className="stack"
+        key={code}
+        onSubmit={(event) => {
+          event.preventDefault();
+          const data = new FormData(event.currentTarget);
+          void form.submit("draw-move-match", { code, startMinutes: fromClock(String(data.get("time") ?? "")), ground: String(data.get("ground") ?? ""), note: String(data.get("note") ?? "") });
+        }}
+      >
+        <div className="set-grid">
+          <label className="field wide">
+            Match
+            <select className="text-input" value={code} onChange={(event) => setCode(event.target.value)}>
+              {fixtures.map((fixture) => (
+                <option key={fixture.id} value={fixture.code ?? ""}>
+                  #{fixture.number} {fixture.code} · {fixture.teamALabel} v {fixture.teamBLabel} · {fixture.startsAt ? timeText(isoToMinutes(fixture.startsAt)) : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">New start time<input className="text-input" type="time" name="time" defaultValue={current?.startsAt ? toClock(isoToMinutes(current.startsAt)) : ""} required /></label>
+          <label className="field">Ground
+            <select className="text-input" name="ground" defaultValue={current?.ground === "Ground B" ? "B" : "A"}>
+              <option value="A">Ground A</option>
+              <option value="B">Ground B</option>
+            </select>
+          </label>
+          <label className="field wide">Reason<input className="text-input" name="note" placeholder="For example: pitch repair" maxLength={200} /></label>
+        </div>
+        <div className="set-actions">
+          <button className="button" type="submit" disabled={form.pending || !code}>{form.pending ? "Moving" : "Move this match"}</button>
+        </div>
+        <AdminFeedback message={form.message ? "Moved." : ""} error={form.error} />
+      </form>
+    </section>
   );
 }

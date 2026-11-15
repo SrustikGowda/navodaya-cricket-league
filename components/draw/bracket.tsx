@@ -1,6 +1,6 @@
 "use client";
 
-import { FINAL_FROM, QF_PAIRINGS, SEED_DESCRIPTIONS, SF_PAIRINGS } from "@/lib/draw/bracket";
+import { QF_PAIRINGS, SF_PAIRINGS } from "@/lib/draw/bracket";
 import { timeText, type ViewMatch } from "@/lib/draw/view";
 import { SideName } from "./match-card";
 
@@ -38,8 +38,8 @@ export function Bracket({ matches, onTeam }: { matches: ViewMatch[]; onTeam?: (t
     <div className="dr-bracket">
       <p className="dr-bk-note">
         {filled
-          ? "The eight qualifiers are in. Winners move forward automatically as results are entered."
-          : "Seeds are filled in when the last league result is entered: 1–3 group winners, 4–6 runners-up, 7–8 wildcards."}
+          ? "The eight qualifiers are confirmed. Winners move forward automatically as results are entered."
+          : "The top 4 of each group qualify. These places are filled once the organizers confirm the final standings."}
       </p>
       <div className="dr-bk-desktop" role="group" aria-label="Knockout bracket">
         <div className="dr-bk-col dr-bk-col--qf">
@@ -87,9 +87,7 @@ export function Bracket({ matches, onTeam }: { matches: ViewMatch[]; onTeam?: (t
           </section>
         ))}
       </div>
-      <p className="dr-bk-seeds">
-        {Object.entries(SEED_DESCRIPTIONS).map(([seed, text]) => `Seed ${seed}: ${text}`).join(" · ")} · Final: {FINAL_FROM.join(" v ")} winners.
-      </p>
+      <p className="dr-bk-seeds">QF1 Group A #1 v Group B #4 · QF2 Group A #2 v Group B #3 · QF3 Group A #3 v Group B #2 · QF4 Group A #4 v Group B #1</p>
     </div>
   );
 }

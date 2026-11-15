@@ -1,7 +1,8 @@
 import { getDb } from "./db";
 import { saveAwards } from "./draw/history";
 import { setKnockoutMatch } from "./draw/knockouts";
-import { parseScoreEntry, recordMatchScore, recordTiebreak } from "./draw/results";
+import { confirmStandings, parseScoreEntry, recordMatchScore, recordTiebreak } from "./draw/results";
+import { moveMatch, previewReschedule, rescheduleOfficialDraw, type TimetablePatch } from "./draw/timetable";
 import { DomainError } from "./errors";
 import { saveAnnouncement, confirmAlias, listAnnouncements, listAudit, listHeritageQueue, listMedia, listSponsors, reviewHeritage, saveSponsor, updateArchive } from "./content";
 import { recordRefund, rejectPayment, setFeePaid, verifyPayment } from "./payments";
@@ -194,6 +195,17 @@ export async function adminAction(actor: Actor, body: Record<string, unknown>) {
       summary: typeof body.summary === "string" ? body.summary : null,
     });
   }
+  if (action === "draw-confirm-standings") return confirmStandings(db, actor);
+  if (action === "draw-preview-times") return previewReschedule(db, actor, timetablePatch(body.timetable));
+  if (action === "draw-apply-times") return rescheduleOfficialDraw(db, actor, { patch: timetablePatch(body.timetable), note: String(body.note ?? "") });
+  if (action === "draw-move-match") {
+    return moveMatch(db, actor, {
+      code: String(body.code ?? ""),
+      startMinutes: body.startMinutes == null || body.startMinutes === "" ? undefined : Number(body.startMinutes),
+      ground: body.ground === "A" || body.ground === "B" ? body.ground : undefined,
+      note: String(body.note ?? ""),
+    });
+  }
   if (action === "save-awards") return { awards: await saveAwards(db, actor, body.awards) };
   if (action === "draw-tiebreak") {
     return recordTiebreak(db, actor, { scope: String(body.scope ?? ""), order: stringList(body.order), note: String(body.note ?? "") });
@@ -277,6 +289,16 @@ function seasonPatch(value: unknown): SeasonPatch {
   if ("waitlistEnabled" in row) patch.waitlistEnabled = row.waitlistEnabled === true;
   if ("registrationAnnounced" in row) patch.registrationAnnounced = row.registrationAnnounced === true;
   return patch;
+}
+
+function timetablePatch(value: unknown): TimetablePatch {
+  const row = (value ?? {}) as Record<string, unknown>;
+  const patch: Record<string, number> = {};
+  for (const [key, raw] of Object.entries(row)) {
+    if (raw === null || raw === undefined || raw === "") continue;
+    patch[key] = Number(raw);
+  }
+  return patch as TimetablePatch;
 }
 
 function numberField(value: unknown): number {

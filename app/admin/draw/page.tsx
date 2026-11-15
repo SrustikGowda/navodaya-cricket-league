@@ -29,6 +29,10 @@ export default async function DrawAdminPage() {
       leagueResults={board.qualification?.leagueMatchesPlayed ?? 0}
       roster={[...(official?.plan.roster ?? [])].sort((a, b) => compareBatch(batchKey(a), batchKey(b)))}
       passwordConfigured={drawPasswordConfigured()}
+      timetable={official?.timetable ?? null}
+      confirmedAt={official?.standingsConfirmedAt ?? null}
+      canConfirm={Boolean(board.qualification?.qualifiers)}
+      leagueComplete={Boolean(board.qualification?.leagueComplete)}
     />
   );
 }

@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { playCue, setSoundEnabled } from "@/lib/draw/audio";
+import { BYE_POSITION, GROUP_TEAMS, OPPONENT_TEMPLATE } from "@/lib/draw/config";
 import { beatIndexAt, buildTimeline, placedBefore, type Beat } from "@/lib/draw/timeline";
 import type { DrawPlan, GroupCode, PublicTeam, RevealStep, SeedRole } from "@/lib/draw/types";
 import { buildViewMatches, DAY_LABEL, slotCodeOf, timeText, type ViewMatch } from "@/lib/draw/view";
-import { PoolDiagram } from "./pool-diagram";
+import { OpponentWeb } from "./group-views";
 import { TeamMark } from "./team-mark";
 import { usePrefersReducedMotion } from "./use-motion";
 
@@ -17,7 +18,7 @@ const SEED_TAG: Record<SeedRole, string> = {
   semifinalist: "Semifinalist · NCL 2025",
 };
 const SEED_SHORT: Record<SeedRole, string> = { champion: "Champion", runner_up: "Runner-up", semifinalist: "Semifinalist" };
-const SEED_INITIALS: Record<SeedRole, string> = { champion: "CH", runner_up: "RU", semifinalist: "SF" };
+const TEAM_TOTAL = 19;
 
 type Props = {
   plan: DrawPlan;
@@ -34,34 +35,47 @@ type Props = {
 export function DrawStage({ plan, mode, teams, drawRef, revealAt, countdown, onClose, onAgain }: Props) {
   const reduced = usePrefersReducedMotion();
   const trial = mode === "trial";
+  // The official reveal follows one shared clock, so every screen shows the same moment. Trials and replays belong to one viewer.
+  const live = mode === "official";
   const rootRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
-  const timeline = useMemo(() => buildTimeline(plan, { reduced, countdown }), [plan, reduced, countdown]);
+  const timeline = useMemo(() => buildTimeline(plan, { reduced, countdown: live && countdown }), [plan, reduced, countdown, live]);
   const names = useMemo(() => new Map(plan.roster.map((team) => [team.id, team.name])), [plan]);
   const logos = useMemo(() => new Map(teams.map((team) => [team.id, team.logoUrl])), [teams]);
   const matches = useMemo(() => buildViewMatches(plan), [plan]);
   // Beat zero is the countdown when there is one, so the timeline starts that long before the reveal moment.
-  const startAt = useMemo(() => revealAt - (countdown ? (timeline.beats[0]?.dur ?? 0) : 0), [revealAt, countdown, timeline]);
+  const startAt = useMemo(() => revealAt - (live && countdown ? (timeline.beats[0]?.dur ?? 0) : 0), [revealAt, live, countdown, timeline]);
 
   const [index, setIndex] = useState(0);
+  const [beatStart, setBeatStart] = useState(() => Date.now());
   const [settled, setSettled] = useState(false);
   const [remaining, setRemaining] = useState(0);
   const [sound, setSound] = useState(false);
   const [present, setPresent] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  const [started, setStarted] = useState(live);
+  const [playing, setPlaying] = useState(live);
   const stopRef = useRef<() => void>(() => {});
   const lastIndex = timeline.beats.length - 1;
   const beat = timeline.beats[index] as Beat;
   const done = beat.kind === "done";
 
-  // Beat controller: absolute times against the shared start, so devices that joined late jump straight to the right beat.
+  const goto = useCallback((next: number) => {
+    setIndex(next);
+    setSettled(false);
+    setBeatStart(Date.now());
+  }, []);
+
+  // Live: absolute times against the shared start, so devices that joined late jump straight to the right beat.
   useEffect(() => {
+    if (!live) return;
     let timer = 0;
     let stopped = false;
     const enter = (next: number) => {
       if (stopped) return;
       setIndex(next);
       setSettled(false);
+      setBeatStart(startAt + (timeline.beats[next] as Beat).at);
       if (next >= lastIndex) return;
       const target = startAt + (timeline.beats[next] as Beat).at + (timeline.beats[next] as Beat).dur;
       timer = window.setTimeout(() => enter(next + 1), Math.max(0, target - Date.now()));
@@ -78,15 +92,23 @@ export function DrawStage({ plan, mode, teams, drawRef, revealAt, countdown, onC
       stopped = true;
       window.clearTimeout(timer);
     };
-  }, [timeline, startAt, lastIndex]);
+  }, [live, timeline, startAt, lastIndex]);
+
+  // Trial and replay: one beat after another while playing; pausing holds the current beat.
+  useEffect(() => {
+    if (live || !playing || index >= lastIndex) return;
+    const timer = window.setTimeout(() => goto(index + 1), (timeline.beats[index] as Beat).dur);
+    return () => window.clearTimeout(timer);
+  }, [live, playing, index, lastIndex, timeline, goto]);
 
   // Marks a team as seated when its flight ends, slightly before the next beat starts.
   useEffect(() => {
-    if (beat.kind !== "place") return;
-    const offset = Math.max(0, Date.now() - (startAt + beat.at));
-    const timer = window.setTimeout(() => setSettled(true), Math.max(0, beat.revealMs + beat.flyMs - offset));
+    if (beat.kind !== "place" && beat.kind !== "bye") return;
+    const wait = beat.kind === "place" ? beat.revealMs + beat.flyMs : Math.round(beat.revealMs * 0.45);
+    const offset = Math.max(0, Date.now() - beatStart);
+    const timer = window.setTimeout(() => setSettled(true), Math.max(0, wait - offset));
     return () => window.clearTimeout(timer);
-  }, [beat, startAt]);
+  }, [beat, beatStart]);
 
   // Countdown display and the "starting in" wait for a shared start.
   useEffect(() => {
@@ -101,10 +123,11 @@ export function DrawStage({ plan, mode, teams, drawRef, revealAt, countdown, onC
   useEffect(() => {
     if (!sound) return;
     if (beat.kind === "place") playCue(beat.step.phase === "seed" ? "seed" : "reveal", true);
+    if (beat.kind === "bye") playCue("seed", true);
     if (beat.kind === "done") playCue("done", true);
   }, [beat, sound]);
   useEffect(() => {
-    if (sound && settled && beat.kind === "place") playCue("place", true);
+    if (sound && settled && (beat.kind === "place" || beat.kind === "bye")) playCue("place", true);
   }, [settled, beat, sound]);
 
   const togglePresent = useCallback(() => {
@@ -149,25 +172,48 @@ export function DrawStage({ plan, mode, teams, drawRef, revealAt, countdown, onC
     setSound(next);
   };
 
+  const skip = () => {
+    if (live) stopRef.current();
+    else {
+      setPlaying(false);
+      setStarted(true);
+      goto(lastIndex);
+      setSettled(true);
+    }
+  };
+  const nextTeam = () => {
+    const next = timeline.beats.findIndex((candidate, i) => i > index && (candidate.kind === "place" || candidate.kind === "bye"));
+    setStarted(true);
+    goto(next === -1 ? lastIndex : next);
+  };
+  const replay = () => {
+    setStarted(true);
+    setPlaying(true);
+    goto(0);
+  };
+
   const placed = useMemo(() => {
-    if (beat.kind === "done" || beat.kind === "groups" || beat.kind === "fixtures" || beat.kind === "schedule") return plan.result.reveal;
+    if (["done", "groups", "fixtures", "schedule", "knockouts"].includes(beat.kind)) return plan.result.reveal;
     const steps = placedBefore(timeline, index);
-    return beat.kind === "place" && settled ? [...steps, beat.step] : steps;
+    return (beat.kind === "place" || beat.kind === "bye") && settled ? [...steps, beat.step] : steps;
   }, [timeline, index, beat, settled, plan]);
   const placedBySlot = useMemo(() => new Map(placed.map((step) => [`${step.group}${step.slot}`, step])), [placed]);
-  const justSeated = beat.kind === "place" && settled ? `${beat.step.group}${beat.step.slot}` : null;
-  const boardsVisible = beat.kind !== "countdown" && !["fixtures", "schedule", "done"].includes(beat.kind);
+  const justSeated = (beat.kind === "place" || beat.kind === "bye") && settled ? `${beat.step.group}${beat.step.slot}` : null;
+  const boardsVisible = !["countdown", "opening", "fixtures", "schedule", "knockouts", "done"].includes(beat.kind);
   const announce =
     beat.kind === "place"
       ? settled
-        ? `${names.get(beat.step.teamId)} placed in Group ${beat.step.group}, sub-pool ${beat.step.subPool}, position ${beat.step.group}${beat.step.slot}. ${placed.length} of 18 teams assigned.`
+        ? `${names.get(beat.step.teamId)} placed at ${beat.step.group}${beat.step.slot}. ${placed.length} of ${TEAM_TOTAL} teams assigned.`
         : `Drawn: ${names.get(beat.step.teamId)}.`
-      : beat.kind === "done"
-        ? trial
-          ? "Trial draw complete. Not official."
-          : "Official fixtures generated."
-        : "";
-  const label = trial ? "TRIAL DRAW — NOT OFFICIAL" : "OFFICIAL GROUP DRAW";
+      : beat.kind === "bye"
+        ? `${names.get(beat.step.teamId)} receives the BYE at ${BYE_POSITION}: two matches and one BYE.`
+        : beat.kind === "done"
+          ? trial
+            ? "Trial draw complete. Not official."
+            : "Official draw completed."
+          : "";
+  const label = trial ? "TRIAL RUN — NOT OFFICIAL" : "OFFICIAL GROUP DRAW";
+  const waiting = !live && !started;
 
   return (
     <div
@@ -186,11 +232,26 @@ export function DrawStage({ plan, mode, teams, drawRef, revealAt, countdown, onC
         </div>
         <div className="dr-stage-progress" aria-hidden={done ? undefined : true}>
           <span>
-            <b>{placed.length}</b> / 18 teams assigned
+            <b>{placed.length}</b> / {TEAM_TOTAL} teams assigned
           </span>
-          <i style={{ ["--p" as string]: `${(placed.length / 18) * 100}%` }} />
+          <i style={{ ["--p" as string]: `${(placed.length / TEAM_TOTAL) * 100}%` }} />
         </div>
         <div className="dr-stage-ctrls">
+          {!live && started && !done ? (
+            <>
+              <button type="button" className="dr-ic" onClick={() => setPlaying((value) => !value)} aria-pressed={playing}>
+                {playing ? "Pause" : "Auto play"}
+              </button>
+              <button type="button" className="dr-ic" onClick={nextTeam}>
+                Next team
+              </button>
+            </>
+          ) : null}
+          {!live && started ? (
+            <button type="button" className="dr-ic" onClick={replay}>
+              Replay
+            </button>
+          ) : null}
           <button type="button" className="dr-ic" onClick={toggleSound} aria-pressed={sound} aria-label={sound ? "Turn sound off" : "Turn sound on"} title="Sound effects (off by default)">
             {sound ? "Sound on" : "Sound off"}
           </button>
@@ -198,7 +259,7 @@ export function DrawStage({ plan, mode, teams, drawRef, revealAt, countdown, onC
             {present || fullscreen ? "Exit full screen" : "Full screen"}
           </button>
           {!done ? (
-            <button type="button" className="dr-ic dr-ic--gold" onClick={() => stopRef.current()}>
+            <button type="button" className="dr-ic dr-ic--gold" onClick={skip}>
               Skip animation
             </button>
           ) : null}
@@ -208,37 +269,47 @@ export function DrawStage({ plan, mode, teams, drawRef, revealAt, countdown, onC
         </div>
       </header>
 
-      {trial ? <div className="dr-stage-wm" aria-hidden="true">TRIAL / DEMO — NOT OFFICIAL</div> : null}
+      {trial ? <div className="dr-stage-wm" aria-hidden="true">TRIAL RUN — NOT OFFICIAL</div> : null}
       <p className="dr-sr" aria-live="polite">{announce}</p>
 
       <main className="dr-stage-main">
         {beat.kind === "countdown" ? <Countdown remaining={remaining} /> : null}
-        {beat.kind === "opening" ? <Opening trial={trial} /> : null}
+        {beat.kind === "opening" ? <Opening trial={trial} waiting={waiting} onStart={() => { setStarted(true); setPlaying(true); }} /> : null}
 
         {boardsVisible ? (
-          <Boards placed={placedBySlot} names={names} logos={logos} justSeated={justSeated} target={beat.kind === "place" ? `${beat.step.group}${beat.step.slot}` : null} showSeeds={beat.kind === "groups"} />
+          <Boards
+            plan={plan}
+            placed={placedBySlot}
+            names={names}
+            logos={logos}
+            justSeated={justSeated}
+            target={beat.kind === "place" || beat.kind === "bye" ? `${beat.step.group}${beat.step.slot}` : null}
+            final={beat.kind === "groups"}
+          />
         ) : null}
 
         {beat.kind === "seeds-intro" ? (
           <Caption kicker="Seeded first" title="The four NCL 2025 semifinalists" ms={beat.dur}>
-            Champion and runner-up go to <b>separate groups</b>. The other two semifinalists go to <b>Group C, in opposite sub-pools</b>.
+            The champions take <b>A1</b> and play the opening match. The runners-up go to <b>Group B</b>. The other two semifinalists go <b>one to each group</b>. No seeded team can receive the BYE.
           </Caption>
         ) : null}
         {beat.kind === "draw-intro" ? (
           <Caption kicker="Random draw" title="14 teams. 14 open places." ms={beat.dur}>
-            Each team is drawn, then placed in the group and sub-pool its draw assigns.
+            Drawn by the server and saved before you see it. Your screen only shows the result.
           </Caption>
         ) : null}
-        {beat.kind === "place" ? <FlyCard key={beat.step.order} beat={beat} startAt={startAt} names={names} logos={logos} rootRef={rootRef} reduced={reduced} total={plan.result.reveal.length} /> : null}
+        {beat.kind === "place" ? <FlyCard key={beat.step.order} beat={beat} beatStart={beatStart} names={names} logos={logos} rootRef={rootRef} reduced={reduced} total={plan.result.reveal.length} /> : null}
+        {beat.kind === "bye" ? <ByeReveal key="bye" beat={beat} names={names} logos={logos} /> : null}
         {beat.kind === "groups" ? (
-          <Caption kicker="All 18 assigned" title="The groups are set" compact ms={beat.dur}>
-            Seeded teams are marked. Next: the three league matches for every team.
+          <Caption kicker="All 19 assigned" title="The groups are set" compact ms={beat.dur}>
+            Group A: 9 teams and the BYE. Group B: 10 teams. Next: who plays whom.
           </Caption>
         ) : null}
 
         {beat.kind === "fixtures" ? <FixtureCreation key={beat.group} group={beat.group} plan={plan} names={names} matches={matches} reduced={reduced} /> : null}
         {beat.kind === "schedule" ? <DaySchedule key={beat.day} day={beat.day} matches={matches} /> : null}
-        {beat.kind === "done" ? <Finished mode={mode} plan={plan} drawRef={drawRef} placed={placedBySlot} names={names} logos={logos} onClose={onClose} onAgain={onAgain} /> : null}
+        {beat.kind === "knockouts" ? <KnockoutPath matches={matches} /> : null}
+        {beat.kind === "done" ? <Finished mode={mode} plan={plan} drawRef={drawRef} placed={placedBySlot} names={names} logos={logos} matches={matches} onClose={onClose} onAgain={onAgain} /> : null}
       </main>
     </div>
   );
@@ -255,14 +326,20 @@ function Countdown({ remaining }: { remaining: number }) {
   );
 }
 
-function Opening({ trial }: { trial: boolean }) {
+function Opening({ trial, waiting, onStart }: { trial: boolean; waiting: boolean; onStart: () => void }) {
   return (
     <div className="dr-opening">
       <div className="dr-opening-rule" aria-hidden="true" />
       <p>Navodaya Cricket League</p>
       <h2>NCL 2026</h2>
-      <h3>{trial ? "Trial group draw" : "Official group draw"}</h3>
+      <h3>{trial ? "Trial run · not official" : "Official group draw"}</h3>
+      <small className="dr-opening-meta">19 teams · 2 groups</small>
       <div className="dr-opening-rule" aria-hidden="true" />
+      {waiting ? (
+        <button type="button" className="dr-btn dr-btn--gold dr-btn--xl dr-opening-start" onClick={onStart}>
+          Start reveal
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -277,63 +354,66 @@ function Caption({ kicker, title, children, compact, ms }: { kicker: string; tit
   );
 }
 
-/** Three groups, two sub-pools each. Slots are fixed DOM elements so the flying card can land on the exact one. */
+/** Two groups of positions. Rows are fixed DOM elements so the flying card can land on the exact one. */
 function Boards({
+  plan,
   placed,
   names,
   logos,
   justSeated,
   target,
-  showSeeds,
+  final,
 }: {
+  plan: DrawPlan;
   placed: Map<string, RevealStep>;
   names: Map<string, string>;
   logos: Map<string, string | null>;
   justSeated: string | null;
   target: string | null;
-  showSeeds: boolean;
+  final: boolean;
 }) {
   return (
-    <div className={showSeeds ? "dr-boards dr-boards--final" : "dr-boards"}>
-      {(["A", "B", "C"] as GroupCode[]).map((group, boardIndex) => (
+    <div className={final ? "dr-boards dr-boards--two dr-boards--final" : "dr-boards dr-boards--two"}>
+      {(["A", "B"] as GroupCode[]).map((group, boardIndex) => (
         <section className="dr-board" key={group} style={{ ["--b" as string]: boardIndex }} aria-label={`Group ${group}`}>
           <h3>
             <span>Group</span>
             {group}
+            <small>{group === "A" ? "9 teams + BYE" : "10 teams"}</small>
           </h3>
-          <div className="dr-board-pools">
-            {([1, 2] as const).map((pool) => (
-              <ul key={pool} aria-label={`Sub-pool ${group}${pool}`}>
-                <li className="dr-pool-name">
-                  Sub-pool {group}
-                  {pool}
+          <ul className="dr-board-list" aria-label={`Group ${group} positions`}>
+            {Array.from({ length: GROUP_TEAMS[group] }, (_, n) => n + 1).map((slot) => {
+              const code = `${group}${slot}`;
+              const step = placed.get(code);
+              const name = step ? names.get(step.teamId) ?? "" : "";
+              const isBye = code === BYE_POSITION;
+              const classes = ["dr-slot-row", step ? "is-filled" : "", step?.seed ? "is-seed" : "", isBye ? "is-bye" : "", justSeated === code ? "is-new" : "", target === code ? "is-target" : ""].filter(Boolean).join(" ");
+              return (
+                <li className={classes} key={code} data-slot={code} data-seed={step?.seed ?? undefined}>
+                  <i>{code}</i>
+                  {step ? (
+                    <>
+                      <TeamMark name={name} logoUrl={logos.get(step.teamId)} size={22} />
+                      <span className="dr-slot-name">{name}</span>
+                      {step.seed ? <em title={SEED_TAG[step.seed]}>{SEED_SHORT[step.seed]}</em> : null}
+                      {isBye ? <em className="dr-slot-bye">BYE</em> : null}
+                    </>
+                  ) : isBye ? (
+                    <span className="dr-slot-empty dr-slot-empty--bye">BYE</span>
+                  ) : (
+                    <span className="dr-slot-empty" aria-hidden="true" />
+                  )}
                 </li>
-                {[1, 2, 3].map((n) => {
-                  const slot = pool === 1 ? n : n + 3;
-                  const code = `${group}${slot}`;
-                  const step = placed.get(code);
-                  const name = step ? names.get(step.teamId) ?? "" : "";
-                  const classes = ["dr-slot-row", step ? "is-filled" : "", step?.seed ? "is-seed" : "", justSeated === code ? "is-new" : "", target === code ? "is-target" : ""].filter(Boolean).join(" ");
-                  return (
-                    <li className={classes} key={code} data-slot={code} data-seed={step?.seed ?? undefined}>
-                      <i>{code}</i>
-                      {step ? (
-                        <>
-                          <TeamMark name={name} logoUrl={logos.get(step.teamId)} size={22} />
-                          <span className="dr-slot-name">{name}</span>
-                          {step.seed ? <em data-short={SEED_INITIALS[step.seed]} title={SEED_TAG[step.seed]}>{SEED_SHORT[step.seed]}</em> : null}
-                        </>
-                      ) : (
-                        <span className="dr-slot-empty" aria-hidden="true" />
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            ))}
-          </div>
+              );
+            })}
+          </ul>
         </section>
       ))}
+      {final && plan.bye ? (
+        <p className="dr-boards-note">
+          <b>BYE · {BYE_POSITION}</b> {names.get(plan.bye.teamId)}: 2 matches + 1 BYE. The only BYE in the tournament.
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -341,7 +421,7 @@ function Boards({
 /** The drawn team: appears in the middle, then travels to its exact slot. Transforms and opacity only. */
 function FlyCard({
   beat,
-  startAt,
+  beatStart,
   names,
   logos,
   rootRef,
@@ -349,7 +429,7 @@ function FlyCard({
   total,
 }: {
   beat: Extract<Beat, { kind: "place" }>;
-  startAt: number;
+  beatStart: number;
   names: Map<string, string>;
   logos: Map<string, string | null>;
   rootRef: React.RefObject<HTMLDivElement | null>;
@@ -391,9 +471,9 @@ function FlyCard({
       ];
     }
     const animation = card.animate(keyframes, { duration: Math.max(1, durationMs), fill: "both" });
-    animation.currentTime = Math.min(durationMs, Math.max(0, Date.now() - (startAt + beat.at)));
+    animation.currentTime = Math.min(durationMs, Math.max(0, Date.now() - beatStart));
     return () => animation.cancel();
-  }, [beat, startAt, durationMs, reduced, rootRef, step.group, step.slot]);
+  }, [beat, beatStart, durationMs, reduced, rootRef, step.group, step.slot]);
 
   return (
     <div className={seed ? "dr-fly dr-fly--seed" : "dr-fly"} ref={ref} style={{ opacity: 0 }}>
@@ -401,53 +481,63 @@ function FlyCard({
       <TeamMark name={name} logoUrl={logos.get(step.teamId)} size={64} />
       <b className="dr-fly-name">{name}</b>
       <span className="dr-fly-dest" style={{ animationDelay: `${Math.round(beat.revealMs * 0.55)}ms` }}>
-        Group {step.group} · Sub-pool {step.group}
-        {step.subPool}
+        {step.group === "A" && step.slot === 1 ? "Group A · A1 · opens the tournament" : `Group ${step.group} · ${step.group}${step.slot}`}
       </span>
     </div>
   );
 }
 
-function FixtureCreation({ group, plan, names, matches, reduced }: { group: GroupCode; plan: DrawPlan; names: Map<string, string>; matches: ViewMatch[]; reduced: boolean }) {
-  const members = plan.result.assignments.filter((a) => a.group === group);
-  const labelBySlot: Record<string, string> = {};
-  const seedBySlot: Record<string, SeedRole> = {};
-  for (const a of members) {
-    labelBySlot[slotCodeOf(a)] = names.get(a.teamId) ?? "";
-    if (a.seed) seedBySlot[slotCodeOf(a)] = a.seed;
-  }
-  const own = matches.filter((m) => m.stage === "league" && m.group === group);
-  const opener = own.find((m) => m.number === 1);
-  const rows = [1, 2, 3].flatMap((from) =>
-    [4, 5, 6].map((to) => own.find((m) => m.a.slot === `${group}${from}` && m.b.slot === `${group}${to}`)).filter((m): m is ViewMatch => Boolean(m)),
-  );
+/** The BYE: its own moment, because it is the only one and it matters. */
+function ByeReveal({ beat, names, logos }: { beat: Extract<Beat, { kind: "bye" }>; names: Map<string, string>; logos: Map<string, string | null> }) {
+  const name = names.get(beat.step.teamId) ?? "";
   return (
-    <div className="dr-fixcreate">
+    <div className="dr-bye">
+      <span className="dr-bye-kicker">The BYE · {BYE_POSITION}</span>
+      <div className="dr-bye-team">
+        <TeamMark name={name} logoUrl={logos.get(beat.step.teamId)} size={72} />
+        <b>{name}</b>
+      </div>
+      <p className="dr-bye-line">2 Matches + 1 BYE</p>
+      <small>The only BYE in the tournament. It is a walkover worth 2 points, not a match.</small>
+    </div>
+  );
+}
+
+function FixtureCreation({ group, plan, names, matches, reduced }: { group: GroupCode; plan: DrawPlan; names: Map<string, string>; matches: ViewMatch[]; reduced: boolean }) {
+  const by = new Map(plan.result.assignments.map((a) => [slotCodeOf(a), a]));
+  const seeds: Record<string, SeedRole> = {};
+  for (const a of plan.result.assignments) if (a.group === group && a.seed) seeds[slotCodeOf(a)] = a.seed;
+  const nameOf = (code: string) => (code === "BYE" ? "BYE" : names.get(by.get(code)?.teamId ?? "") ?? code);
+  const opener = matches.find((m) => m.number === 1);
+  const own = matches.filter((m) => m.stage === "league" && m.group === group).length;
+  return (
+    <div className="dr-fixcreate dr-fixcreate--web">
       <div className="dr-fixcreate-head">
-        <span>League fixtures</span>
+        <span>League fixtures from the 2025 pattern</span>
         <b>Group {group}</b>
-        <small>Every team plays the three teams in the opposite sub-pool</small>
+        <small>
+          {own} matches{group === "A" ? " + the BYE" : ""} · every team has 3 fixtures
+        </small>
       </div>
-      <div className="dr-fixcreate-pool">
-        <div className="dr-pool-cols" aria-hidden="true">
-          <span>Sub-pool {group}1</span>
-          <span>Sub-pool {group}2</span>
-        </div>
-        <PoolDiagram group={group} names={labelBySlot} seeds={seedBySlot} drawLines={!reduced} opener={opener ? [opener.a.slot as string, opener.b.slot as string] : undefined} />
+      <div className="dr-fixweb">
+        <OpponentWeb group={group} seeds={seeds} opener={group === "A" && opener ? ["A1", "A2"] : undefined} animate={!reduced} />
+        <ul className="dr-fixweb-list">
+          {Object.entries(OPPONENT_TEMPLATE[group]).map(([code, opponents], i) => (
+            <li key={code} style={{ ["--i" as string]: i }} className={code === "A1" ? "is-opener" : undefined}>
+              <i>{code}</i>
+              <b>{nameOf(code)}</b>
+              <span>{opponents.map((o) => o).join(" · ")}</span>
+            </li>
+          ))}
+        </ul>
       </div>
-      <ol className="dr-fixcreate-list">
-        {rows.map((match, i) => (
-          <li key={match.code} style={{ ["--i" as string]: i }} className={match.number === 1 ? "is-opener" : undefined}>
-            <b>M{String(match.number).padStart(2, "0")}</b>
-            <span>
-              {match.a.slot} v {match.b.slot}
-            </span>
-            <small>
-              {DAY_LABEL[match.day].slice(0, 3)} {timeText(match.startMinutes)} · Ground {match.ground}
-            </small>
-          </li>
-        ))}
-      </ol>
+      {group === "A" && opener ? (
+        <p className="dr-fixweb-open">
+          Opening match · <b>{opener.a.label}</b> v <b>{opener.b.label}</b> · {DAY_LABEL[opener.day]} {timeText(opener.startMinutes)} · {opener.groundName}
+        </p>
+      ) : (
+        <p className="dr-fixweb-open">Group B is a ring: each team plays its two neighbours and the team five places away.</p>
+      )}
     </div>
   );
 }
@@ -460,25 +550,68 @@ function DaySchedule({ day, matches }: { day: 1 | 2; matches: ViewMatch[] }) {
       <div className="dr-fixcreate-head">
         <span>{day === 1 ? "28 November 2026" : "29 November 2026"}</span>
         <b>{DAY_LABEL[day]}</b>
-        <small>{day === 1 ? "18 league matches · two grounds" : "9 league matches, then the knockouts"}</small>
+        <small>{day === 1 ? "20 league matches · two grounds · inauguration break" : "8 league matches, then the knockouts"}</small>
       </div>
       <ol>
         {slots.map((minutes, i) => {
           const items = rows.filter((m) => m.startMinutes === minutes).sort((x, y) => x.ground.localeCompare(y.ground));
+          // The inauguration break: a gap bigger than one slot between two league slots.
+          const previous = i > 0 ? (slots[i - 1] as number) : null;
+          const breakFrom = day === 1 && previous != null && items.every((m) => m.stage === "league") && minutes - previous > 55 ? previous + 55 : null;
           return (
-            <li key={minutes} style={{ ["--i" as string]: i }}>
-              <time>{timeText(minutes)}</time>
-              <div>
-                {items.map((m) => (
-                  <span key={m.code} className={m.stage !== "league" ? "is-ko" : m.number === 1 ? "is-opener" : undefined}>
-                    <i>{m.ground}</i>
-                    <b>{m.stage === "league" ? `${m.a.label} v ${m.b.label}` : `${m.code === "F" ? "Final" : m.code}: ${m.a.label} v ${m.b.label}`}</b>
-                  </span>
-                ))}
-              </div>
-            </li>
+            <Fragment key={minutes}>
+              {breakFrom != null ? (
+                <li className="is-break" style={{ ["--i" as string]: i }}>
+                  <time>{timeText(breakFrom)}</time>
+                  <div>
+                    <span>
+                      <b>Inauguration break · until {timeText(minutes)}</b>
+                    </span>
+                  </div>
+                </li>
+              ) : null}
+              <li style={{ ["--i" as string]: i }}>
+                <time>{timeText(minutes)}</time>
+                <div>
+                  {items.map((m) => (
+                    <span key={m.code} className={m.stage !== "league" ? "is-ko" : m.number === 1 ? "is-opener" : undefined}>
+                      <i>{m.ground}</i>
+                      <b>{m.stage === "league" ? `${m.a.label} v ${m.b.label}` : `${m.code === "F" ? "Final" : m.code}: ${m.a.label} v ${m.b.label}`}</b>
+                    </span>
+                  ))}
+                </div>
+              </li>
+            </Fragment>
           );
         })}
+      </ol>
+    </div>
+  );
+}
+
+function KnockoutPath({ matches }: { matches: ViewMatch[] }) {
+  const ko = matches.filter((m) => m.stage !== "league");
+  return (
+    <div className="dr-daysched dr-ko">
+      <div className="dr-fixcreate-head">
+        <span>Sunday 29 November</span>
+        <b>The knockout path</b>
+        <small>Top 4 of each group qualify. Filled in after the organizers confirm the standings.</small>
+      </div>
+      <ol>
+        {ko.map((m, i) => (
+          <li key={m.code} style={{ ["--i" as string]: i }}>
+            <time>{timeText(m.startMinutes)}</time>
+            <div>
+              <span className="is-ko">
+                <i>{m.ground}</i>
+                <b>
+                  {m.code === "F" ? "Final" : m.code}: {m.a.label} v {m.b.label}
+                </b>
+              </span>
+            </div>
+          </li>
+        ))}
       </ol>
     </div>
   );
@@ -491,6 +624,7 @@ function Finished({
   placed,
   names,
   logos,
+  matches,
   onClose,
   onAgain,
 }: {
@@ -500,28 +634,31 @@ function Finished({
   placed: Map<string, RevealStep>;
   names: Map<string, string>;
   logos: Map<string, string | null>;
+  matches: ViewMatch[];
   onClose: () => void;
   onAgain?: () => void;
 }) {
   const trial = mode === "trial";
-  const opener = plan.matches[0];
+  const opener = matches.find((m) => m.number === 1);
   return (
     <div className="dr-finished">
       <div className={trial ? "dr-finish-head dr-finish-head--trial" : "dr-finish-head"}>
         <span className="dr-check" aria-hidden="true" />
         <div>
-          <b>{trial ? "TRIAL COMPLETE — NOT OFFICIAL" : mode === "replay" ? "OFFICIAL DRAW · REPLAY" : "OFFICIAL FIXTURES GENERATED"}</b>
+          <b>{trial ? "TRIAL COMPLETE — NOT OFFICIAL" : mode === "replay" ? "OFFICIAL DRAW · REPLAY" : "OFFICIAL DRAW COMPLETED"}</b>
           <small>
             {trial
               ? "Nothing was saved or published. Run it again as often as you like."
-              : `Saved and published${drawRef ? ` as ${drawRef}` : ""}. 27 league matches and 7 knockouts. Everyone visiting the Fixtures page now sees this draw.`}
+              : `Saved and published${drawRef ? ` as ${drawRef}` : ""}. 28 league matches, the BYE and 7 knockouts. Everyone visiting the Fixtures page now sees this draw.`}
           </small>
         </div>
       </div>
-      <Boards placed={placed} names={names} logos={logos} justSeated={null} target={null} showSeeds />
-      <p className="dr-finish-open">
-        Opening match · Saturday 7:30 AM · Ground A: <b>{opener?.teamA.label}</b> v <b>{opener?.teamB.label}</b>
-      </p>
+      <Boards plan={plan} placed={placed} names={names} logos={logos} justSeated={null} target={null} final />
+      {opener ? (
+        <p className="dr-finish-open">
+          Opening match · {DAY_LABEL[opener.day]} {timeText(opener.startMinutes)} · {opener.groundName}: <b>{opener.a.label}</b> v <b>{opener.b.label}</b>
+        </p>
+      ) : null}
       <div className="dr-finish-actions">
         <button type="button" className="dr-btn dr-btn--gold" onClick={onClose}>
           {trial ? "See trial fixtures" : "View fixtures"}

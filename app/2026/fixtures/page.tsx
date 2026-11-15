@@ -2,8 +2,9 @@ export const dynamic = "force-dynamic";
 
 import Link from "next/link";
 import { DrawStudio } from "@/components/draw/draw-studio";
-import { FormatImage } from "@/components/draw/format-image";
+import { TournamentFormat } from "@/components/draw/tournament-format";
 import "@/components/draw/draw.css";
+import "@/components/draw/draw2.css";
 import { PublicShell } from "@/components/shell";
 import { getActor } from "@/lib/auth";
 import { getDb } from "@/lib/db";
@@ -43,7 +44,14 @@ export default async function FixturesPage({ searchParams }: { searchParams: Pro
           passwordConfigured={drawPasswordConfigured()}
           readiness={{ ready: readiness.ready, message: readiness.message }}
           initial={{ tab: params.tab, team: params.team, day: params.day, stage: params.stage, ground: params.ground, group: params.group }}
-          about={<FormatImage />}
+          about={
+            <>
+              <div className="dr-about-head">
+                <h2 id="dr-format-title">The format</h2>
+              </div>
+              <TournamentFormat />
+            </>
+          }
         >
           {manual.length > 0 ? (
             <div className="dr-manual">

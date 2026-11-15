@@ -1,16 +1,12 @@
-import {
-  KNOCKOUT_DURATION_MINUTES,
-  KNOCKOUT_TIMES,
-  OVERS,
-} from "./config";
+import { OVERS, type Timetable } from "./config";
 import type { GroundCode, GroupCode, MatchSide, PlannedMatch, Stage } from "./types";
 
-/** Quarterfinal pairings by seed. Seeds 1-3 are group winners, 4-6 runners-up, 7-8 wildcards. */
+/** Quarterfinal pairings: the top four of each group, crossed over. "A1" here means Group A's first-placed team. */
 export const QF_PAIRINGS = [
-  { code: "QF1", seeds: [1, 8], ground: "A" as GroundCode },
-  { code: "QF2", seeds: [4, 5], ground: "B" as GroundCode },
-  { code: "QF3", seeds: [2, 7], ground: "A" as GroundCode },
-  { code: "QF4", seeds: [3, 6], ground: "B" as GroundCode },
+  { code: "QF1", a: { group: "A" as GroupCode, rank: 1 }, b: { group: "B" as GroupCode, rank: 4 }, ground: "A" as GroundCode },
+  { code: "QF2", a: { group: "A" as GroupCode, rank: 2 }, b: { group: "B" as GroupCode, rank: 3 }, ground: "B" as GroundCode },
+  { code: "QF3", a: { group: "A" as GroupCode, rank: 3 }, b: { group: "B" as GroupCode, rank: 2 }, ground: "A" as GroundCode },
+  { code: "QF4", a: { group: "A" as GroupCode, rank: 4 }, b: { group: "B" as GroupCode, rank: 1 }, ground: "B" as GroundCode },
 ] as const;
 
 export const SF_PAIRINGS = [
@@ -20,19 +16,12 @@ export const SF_PAIRINGS = [
 
 export const FINAL_FROM = ["SF1", "SF2"] as const;
 
-export const SEED_DESCRIPTIONS: Record<number, string> = {
-  1: "Best group winner",
-  2: "Second-best group winner",
-  3: "Third-best group winner",
-  4: "Best runner-up",
-  5: "Second-best runner-up",
-  6: "Third-best runner-up",
-  7: "Best wildcard (third-placed)",
-  8: "Second wildcard (third-placed)",
-};
+export function rankLabel(group: GroupCode, rank: number): string {
+  return `Group ${group} #${rank}`;
+}
 
-export function seedLabel(seed: number): string {
-  return `Qualifier Seed ${seed}`;
+export function rankPlaceholder(group: GroupCode, rank: number): string {
+  return `rank:${group}:${rank}`;
 }
 
 export function winnerLabel(code: string): string {
@@ -54,47 +43,49 @@ export { startsAt as istInstant };
 function knockout(
   code: string,
   number: number,
-  stage: Stage,
+  stage: Exclude<Stage, "league">,
   date: string,
   startMinutes: number,
+  durationMinutes: number,
   ground: GroundCode,
   teamA: MatchSide,
   teamB: MatchSide,
 ): PlannedMatch {
-  const durations = KNOCKOUT_DURATION_MINUTES;
   return {
     code,
     number,
     stage,
-    group: null as GroupCode | null,
+    group: null,
     day: 2,
     date,
     slotIndex: -1,
     startMinutes,
     startsAt: startsAt(date, startMinutes),
-    durationMinutes: stage === "quarterfinal" ? durations.quarterfinal : stage === "semifinal" ? durations.semifinal : durations.final,
-    overs: OVERS[stage === "league" ? "league" : stage],
+    durationMinutes,
+    overs: OVERS[stage],
     ground,
     teamA,
     teamB,
   };
 }
 
-/** The seven knockout fixtures with qualification placeholders. Numbers continue after the 27 league matches. */
-export function knockoutMatches(sundayDate: string, firstNumber: number): PlannedMatch[] {
+/** The seven knockout fixtures with qualification placeholders. Numbers continue after the 28 league matches. */
+export function knockoutMatches(sundayDate: string, firstNumber: number, timetable: Timetable): PlannedMatch[] {
   const matches: PlannedMatch[] = [];
   let number = firstNumber;
   for (const pairing of QF_PAIRINGS) {
+    const start = pairing.code === "QF1" || pairing.code === "QF2" ? timetable.qf1 : timetable.qf2;
     matches.push(
       knockout(
         pairing.code,
         number++,
         "quarterfinal",
         sundayDate,
-        KNOCKOUT_TIMES[pairing.code],
+        start,
+        timetable.quarterfinalMinutes,
         pairing.ground,
-        side(seedLabel(pairing.seeds[0]), `seed:${pairing.seeds[0]}`),
-        side(seedLabel(pairing.seeds[1]), `seed:${pairing.seeds[1]}`),
+        side(rankLabel(pairing.a.group, pairing.a.rank), rankPlaceholder(pairing.a.group, pairing.a.rank)),
+        side(rankLabel(pairing.b.group, pairing.b.rank), rankPlaceholder(pairing.b.group, pairing.b.rank)),
       ),
     );
   }
@@ -105,7 +96,8 @@ export function knockoutMatches(sundayDate: string, firstNumber: number): Planne
         number++,
         "semifinal",
         sundayDate,
-        KNOCKOUT_TIMES[pairing.code],
+        timetable.sf,
+        timetable.semifinalMinutes,
         pairing.ground,
         side(winnerLabel(pairing.from[0]), `winner:${pairing.from[0]}`),
         side(winnerLabel(pairing.from[1]), `winner:${pairing.from[1]}`),
@@ -118,7 +110,8 @@ export function knockoutMatches(sundayDate: string, firstNumber: number): Planne
       number++,
       "final",
       sundayDate,
-      KNOCKOUT_TIMES.F,
+      timetable.final,
+      timetable.finalMinutes,
       "A",
       side(winnerLabel(FINAL_FROM[0]), `winner:${FINAL_FROM[0]}`),
       side(winnerLabel(FINAL_FROM[1]), `winner:${FINAL_FROM[1]}`),
@@ -127,48 +120,18 @@ export function knockoutMatches(sundayDate: string, firstNumber: number): Planne
   return matches;
 }
 
-export type Qualifier = { teamId: string; group: GroupCode; seed: number };
+export type Qualifier = { teamId: string; group: GroupCode; rank: number };
 
-/**
- * Pairs the eight qualified teams into quarterfinals.
- *
- * Seeds are paired 1v8, 4v5, 2v7, 3v6. If a pairing would meet two teams from the same group, the
- * lower seeds (5-8) are reassigned among the top four seeds by the smallest total seed displacement
- * that gives the fewest same-group pairings. The result is deterministic.
- */
-export function pairQuarterfinals(qualifiers: Qualifier[]): { code: string; teamAId: string; teamBId: string; sameGroup: boolean }[] {
-  const bySeed = new Map(qualifiers.map((q) => [q.seed, q]));
-  for (let seed = 1; seed <= 8; seed += 1) {
-    if (!bySeed.has(seed)) throw new Error(`Quarterfinal seed ${seed} is missing.`);
-  }
-  const top = QF_PAIRINGS.map((pairing) => pairing.seeds[0]);
-  const ideal = QF_PAIRINGS.map((pairing) => pairing.seeds[1]);
-  const lowers = [5, 6, 7, 8];
-
-  let best: { assignment: number[]; clashes: number; displacement: number } | null = null;
-  const permute = (current: number[], remaining: number[]) => {
-    if (remaining.length === 0) {
-      const clashes = current.reduce((sum, lower, index) => {
-        const a = bySeed.get(top[index] as number) as Qualifier;
-        const b = bySeed.get(lower) as Qualifier;
-        return sum + (a.group === b.group ? 1 : 0);
-      }, 0);
-      const displacement = current.reduce((sum, lower, index) => sum + Math.abs(lower - (ideal[index] as number)), 0);
-      if (!best || clashes < best.clashes || (clashes === best.clashes && displacement < best.displacement)) {
-        best = { assignment: [...current], clashes, displacement };
-      }
-      return;
-    }
-    for (const lower of remaining) {
-      permute([...current, lower], remaining.filter((value) => value !== lower));
-    }
+/** Pairs the eight qualified teams into quarterfinals. Always the same crossover; nothing is ever swapped. */
+export function pairQuarterfinals(qualifiers: Qualifier[]): { code: string; teamAId: string; teamBId: string }[] {
+  const find = (group: GroupCode, rank: number) => {
+    const found = qualifiers.find((q) => q.group === group && q.rank === rank);
+    if (!found) throw new Error(`Group ${group} #${rank} is missing.`);
+    return found;
   };
-  permute([], lowers);
-
-  const chosen = best as unknown as { assignment: number[] };
-  return QF_PAIRINGS.map((pairing, index) => {
-    const a = bySeed.get(top[index] as number) as Qualifier;
-    const b = bySeed.get(chosen.assignment[index] as number) as Qualifier;
-    return { code: pairing.code, teamAId: a.teamId, teamBId: b.teamId, sameGroup: a.group === b.group };
-  });
+  return QF_PAIRINGS.map((pairing) => ({
+    code: pairing.code,
+    teamAId: find(pairing.a.group, pairing.a.rank).teamId,
+    teamBId: find(pairing.b.group, pairing.b.rank).teamId,
+  }));
 }

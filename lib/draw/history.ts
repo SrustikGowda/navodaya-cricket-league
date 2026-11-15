@@ -164,7 +164,7 @@ export async function syncEditionHistory(db: Queryable): Promise<void> {
   if (season.ballType) lines.push(`Ball: ${season.ballType}`);
   const counts = await db.query<{ teams: number; matches: number }>(
     `select (select count(*) from registrations where season_id = $1 and status = 'approved')::int as teams,
-            (select count(*) from fixtures where draw_id = $2)::int as matches`,
+            (select count(*) from fixtures where draw_id = $2 and not is_bye)::int as matches`,
     [season.id, drawId],
   );
   lines.push(`Teams: ${counts[0]?.teams ?? 0}`, `Matches: ${counts[0]?.matches ?? 0}`);

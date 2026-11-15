@@ -41,7 +41,7 @@ export type PublicFixture = {
 async function allPublicFixtures(db: Queryable): Promise<PublicFixture[]> {
   return remember("public-fixtures", 20_000, async () => {
     const season = await getActiveSeason(db);
-    const rows = await db.query("select * from public_fixtures where season_id = $1 order by starts_at nulls last, match_number", [
+    const rows = await db.query("select * from public_fixtures where season_id = $1 and not is_bye order by starts_at nulls last, match_number", [
       season.id,
     ]);
     return rows.map(mapPublicFixture);
