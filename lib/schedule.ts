@@ -612,7 +612,7 @@ async function loadFixturesByVersion(db: Queryable, versionId: string): Promise<
     `select f.*, g.name as ground_name
      from fixtures f
      left join grounds g on g.id = f.ground_id
-     where f.schedule_version_id = $1
+     where f.schedule_version_id = $1 and not f.is_bye
      order by f.starts_at nulls last, f.match_number`,
     [versionId],
   );

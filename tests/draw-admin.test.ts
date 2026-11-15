@@ -168,7 +168,7 @@ test("knockout teams and winners can be chosen by hand, and winners move forward
 
   // Clearing a team restores its placeholder.
   await setKnockoutMatch(db, admin, qf2.id, { teamAId: null, teamBId: null, winner: null });
-  assert.equal((await published(db)).get("QF2").teamALabel, "Qualifier Seed 4");
+  assert.equal((await published(db)).get("QF2").teamALabel, "Group A #2");
   const player = await captain(db);
   await assert.rejects(() => setKnockoutMatch(db, player, qf1.id, { teamAId: A, teamBId: B, winner: null }), (e) => code(e) === "forbidden");
   await db.close();
@@ -234,8 +234,8 @@ test("the edition's History entry builds itself from the knockouts and the award
   assert.equal(hall.standouts.wickets?.figure, "11");
   assert.equal(hall.standouts.mvp?.name, "Deekshith Gowda");
   assert.equal(hall.standouts.fielder?.name, "Darshan K P");
-  assert.ok(hall.details.some((d) => d.label === "Teams" && d.value === "18"));
-  assert.ok(hall.details.some((d) => d.label === "Matches" && d.value === "34"));
+  assert.ok(hall.details.some((d) => d.label === "Teams" && d.value === "19"));
+  assert.ok(hall.details.some((d) => d.label === "Matches" && d.value === "35"));
 
   // Changing the winner changes the champion straight away; an undecided final removes the entry.
   await setKnockoutMatch(db, admin, afterSf.get("F").id, { teamAId: t[0] as string, teamBId: t[6] as string, winner: "a" });
@@ -306,7 +306,7 @@ test("an admin can delete the official run, with results only after they confirm
   // The Real Run is available again and makes a fresh draw.
   const second = await runOfficialDraw(db, admin, { requestId: nextRequest() });
   assert.notEqual(second.draw.ref, first?.ref);
-  assert.equal((await listPublicFixtures(db)).length, 34);
+  assert.equal((await listPublicFixtures(db)).length, 35);
   const standings = await db.query<{ n: number }>("select count(*)::int as n from match_scores ms join fixtures f on f.id = ms.fixture_id where f.draw_id = $1", [second.draw.id]);
   assert.equal(standings[0]?.n, 0, "the new draw starts with no results");
   await db.close();

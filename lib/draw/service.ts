@@ -478,7 +478,7 @@ export async function runOfficialDraw(
 export async function drawResultCounts(db: Queryable, drawId: string): Promise<{ started: number; scores: number }> {
   const rows = await db.query<{ started: number; scores: number }>(
     `select
-       (select count(*) from fixtures where draw_id = $1 and status in ('in_progress','completed','abandoned'))::int as started,
+       (select count(*) from fixtures where draw_id = $1 and not is_bye and status in ('in_progress','completed','abandoned'))::int as started,
        (select count(*) from match_scores ms join fixtures f on f.id = ms.fixture_id where f.draw_id = $1)::int as scores`,
     [drawId],
   );
