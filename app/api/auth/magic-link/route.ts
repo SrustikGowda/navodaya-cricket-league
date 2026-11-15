@@ -2,6 +2,7 @@ import { errorResponse, guardMutation, json, readJson } from "@/lib/http";
 import { supabaseAuthConfigured } from "@/lib/integrations";
 import { clientKey, rateLimit } from "@/lib/rate-limit";
 import { safeNextPath } from "@/lib/format";
+import { siteUrl } from "@/lib/site-url";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,7 @@ export async function POST(request: Request) {
       auth: { persistSession: false },
     });
     const next = safeNextPath(typeof body.next === "string" ? body.next : "/captain");
-    const site = process.env.NEXT_PUBLIC_SITE_URL || new URL(request.url).origin;
+    const site = siteUrl(new URL(request.url).origin);
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: { emailRedirectTo: `${site}/auth/callback?next=${encodeURIComponent(next)}` },
