@@ -118,7 +118,7 @@ export function SettingsForm({ version, values }: { version: number; values: Val
           <input className="text-input" name="contactEmail" type="email" defaultValue={value("contactEmail")} />
         </label>
         <label className="field wide">
-          Rules (shown on the Rules page)
+          Notes from the organizers (shown at the top of the Rules page)
           <textarea name="rulesText" rows={4} defaultValue={value("rulesText")} />
         </label>
       </div>

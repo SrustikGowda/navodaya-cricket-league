@@ -883,3 +883,11 @@
 .gw--hold .gw-edge {
   opacity: 0;
 }
+
+.dr-rules-link {
+  margin-top: 0.8rem;
+}
+.dr-rules-link a {
+  color: var(--dr-gold);
+  font-weight: 700;
+}

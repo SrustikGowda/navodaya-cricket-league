@@ -1,25 +1,39 @@
 export const dynamic = "force-dynamic";
 
-import Link from "next/link";
+import "./rules.css";
+import { Rulebook } from "@/components/rulebook";
 import { PublicShell } from "@/components/shell";
 import { getDb } from "@/lib/db";
-import { getActiveSeason, toPublicSeason } from "@/lib/season";
+import { DEFAULT_TIMETABLE } from "@/lib/draw/config";
+import { getOfficialDraw } from "@/lib/draw/service";
+import { formatEventDates, formatInrFromPaise } from "@/lib/format";
+import { buildRulebook } from "@/lib/rules";
+import { getActiveSeason } from "@/lib/season";
 
-export const metadata = { title: "Rules" };
+export const metadata = {
+  title: "Rules",
+  description: "NCL 2026 tournament rules and guidelines: format, points and qualification, overs, no-balls and wides, fielding, timing penalties, dismissals and awards.",
+};
 
 export default async function RulesPage() {
-  const season = toPublicSeason(await getActiveSeason(await getDb()));
+  const db = await getDb();
+  const season = await getActiveSeason(db);
+  // Times follow the official draw once it is published, including any rescheduling by the organizers.
+  const official = await getOfficialDraw(db);
+  const organizer = season.organizerCredit?.replace(/^organi[sz]ed by\s+/i, "").trim() || null;
+  const book = buildRulebook({
+    editionNumber: season.editionNumber,
+    dates: formatEventDates(season.startDate, season.endDate),
+    days: [season.startDate, season.endDate],
+    venue: [season.venueName, season.venueAddress].map((part) => part?.trim()).filter(Boolean).join(", "),
+    organizer: organizer ? organizer.charAt(0).toUpperCase() + organizer.slice(1) : null,
+    fee: season.feePaise != null && season.feePaise > 0 ? formatInrFromPaise(season.feePaise) : null,
+    ball: season.ballType,
+    timetable: official?.timetable ?? DEFAULT_TIMETABLE,
+  });
   return (
     <PublicShell>
-      <p className="kicker">2026</p>
-      <h1>Rules</h1>
-      {season.rulesText ? <article style={{ whiteSpace: "pre-wrap" }}><p>Version {season.rulesVersion}</p><p>{season.rulesText}</p></article> : <p>Playing conditions have not been published yet.</p>}
-      {season.eligibilityRules ? <p>{season.eligibilityRules}</p> : null}
-      {season.ballType ? <p>Ball: {season.ballType}</p> : null}
-      {season.oversByStage ? <p>Overs: {season.oversByStage}</p> : null}
-      {season.playingXi ? <p>Playing XI: {season.playingXi}</p> : null}
-      {season.refundPolicy ? <p>{season.refundPolicy}</p> : null}
-      <p><Link href="/2026">Home</Link></p>
+      <Rulebook book={book} notes={season.rulesText?.trim() || null} />
     </PublicShell>
   );
 }
