@@ -34,7 +34,7 @@ export type DrawResult = {
   reveal: RevealStep[];
   /** The one team whose third league fixture is a BYE (position A9). */
   byeTeamId: string;
-  /** The champion's opening opponent: whoever holds A2. */
+  /** The team at A2, who plays the team at A1 in the opening match. */
   openingOpponentId: string;
 };
 

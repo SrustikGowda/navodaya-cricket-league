@@ -3,10 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { BYE_CODE, GROUP_TEAMS, LEAGUE_MATCHES_BY_GROUP, OPPONENT_TEMPLATE } from "@/lib/draw/config";
 import { groundShareText, positionGroundSplit } from "@/lib/draw/grounds";
-import type { GroupCode, SeedRole } from "@/lib/draw/types";
 import { OpponentWeb } from "./group-views";
 
-const SEEDS: Record<GroupCode, Record<string, SeedRole>> = { A: { A1: "champion" }, B: {} };
 const GROUNDS = positionGroundSplit();
 
 function sentence(code: string): string {
@@ -66,7 +64,7 @@ export function HowFixturesWork() {
                   {GROUP_TEAMS[group]} teams{group === "A" ? " + 1 BYE" : ""} · {LEAGUE_MATCHES_BY_GROUP[group]} matches
                 </span>
               </figcaption>
-              <OpponentWeb group={group} seeds={SEEDS[group]} opener={group === "A" ? ["A1", "A2"] : undefined} focus={active} animate={seen} hold={!seen} onPick={pick} />
+              <OpponentWeb group={group} opener={group === "A" ? ["A1", "A2"] : undefined} focus={active} animate={seen} hold={!seen} onPick={pick} />
               <p className="dr-how-line" aria-live="polite">
                 {active ? sentence(active) : "Tap a position to see its three opponents."}
               </p>
@@ -75,7 +73,7 @@ export function HowFixturesWork() {
         })}
       </div>
       <p className="dr-how-foot">
-        Each line is one match. The dashed green line is the BYE, a walkover worth 2 points that one team in Group A receives. The gold position is the defending champion, who always plays the opening match.
+        Each line is one match. The dashed green line is the BYE, a walkover worth 2 points that one team in Group A receives. The brighter line is the opening match, A1 v A2.
       </p>
       <p className="dr-how-foot">{groundShareText()}</p>
     </section>

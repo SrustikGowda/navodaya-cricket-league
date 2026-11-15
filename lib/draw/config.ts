@@ -3,7 +3,7 @@
 // 19 teams, two groups, one BYE. The opponent pattern and the order of matches are the ones NCL 2025 used, kept
 // as fixed templates: only which team sits in which position is random.
 
-export const ALGORITHM = "ncl-2026-draw-v2";
+export const ALGORITHM = "ncl-2026-draw-v3";
 
 export const TEAM_COUNT = 19;
 export const GROUP_CODES = ["A", "B"] as const;

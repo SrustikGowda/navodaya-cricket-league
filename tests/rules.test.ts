@@ -54,6 +54,11 @@ test("the stages, overs, ranking and bowling rules say what the organizers decid
   assert.match(all, /League matches are 6 overs an innings, with a maximum of 55 minutes/);
   assert.match(all, /Quarterfinals, semifinals and the final are 8 overs an innings/);
   assert.equal(book.highlights[0], "6 overs a side in league matches; 8 in the quarterfinals, semifinals and final");
+  // Seeding: the champion and the runner-up land in different groups at random, with no fixed place or opening match.
+  const seeding = book.sections.find((s) => s.id === "format")?.rules.find((r) => /As per NCL tradition/.test(r.text));
+  assert.equal(seeding?.text, "As per NCL tradition, the defending champions, 4s-11, and the runners-up, RCB United, are placed in different groups at random.");
+  assert.deepEqual(seeding?.items, ["The other two 2025 semifinalists, JNV Junglees and Balehonnur Bulls, go one to each group at random.", "Every other position is drawn at random."]);
+  assert.doesNotMatch(all, /placed at A1|first match of the tournament|placed in Group B/);
   const stages = book.sections.find((s) => s.id === "match")?.tables?.[0]?.rows;
   assert.deepEqual(stages, [
     ["League", "6", "55 minutes", "At least 5"],

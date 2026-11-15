@@ -244,8 +244,6 @@ export function validatePlan(plan: DrawPlan): PlanReport {
     fail("All four seeded teams must be allocated.");
   } else {
     if (new Set([championId, runnerUpId, ...semifinalistIds]).size !== 4) fail("The four seeded teams must be different.");
-    if (champion.group !== "A" || champion.slot !== 1) fail("The defending champion must be at A1.");
-    if (runnerUp.group !== "B") fail("The runner-up must be in Group B.");
     if (champion.group === runnerUp.group) fail("Champion and runner-up must be in different groups.");
     if (semiOne.group === semiTwo.group) fail("The two other semifinalists must be in different groups.");
     for (const seed of [champion, runnerUp, semiOne, semiTwo]) {
@@ -350,7 +348,7 @@ export function validatePlan(plan: DrawPlan): PlanReport {
   // The opening match
   const first = [...matches].sort((p, q) => p.startsAt.localeCompare(q.startsAt) || p.ground.localeCompare(q.ground))[0];
   if (!first || first.number !== 1 || first.ground !== "A") fail("Match 1 must be the first match, on Ground A.");
-  else if (first.teamA.slot !== "A1" || first.teamB.slot !== "A2" || first.teamA.teamId !== championId) fail("The opening match must be the defending champion at A1 against A2.");
+  else if (first.teamA.slot !== "A1" || first.teamB.slot !== "A2") fail("The opening match must be A1 v A2.");
   else if (first.teamB.teamId !== result.openingOpponentId) fail("The opening opponent must be the team at A2.");
 
   // Times, grounds, rest

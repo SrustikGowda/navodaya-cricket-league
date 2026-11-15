@@ -152,7 +152,8 @@ test("the real run saves groups, memberships, 36 fixture entries (35 matches and
   assert.equal(opener?.groundName, "Ground A");
   assert.equal(opener?.startsAt, "2026-11-28T01:30:00.000Z", "07:00 IST");
   assert.equal(opener?.overs, 6);
-  assert.ok([opener?.teamALabel, opener?.teamBLabel].includes("4s-11"), "the defending champion opens");
+  const at = (slot: string) => draw.plan.result.assignments.find((a) => `${a.group}${a.slot}` === slot)?.teamId;
+  assert.deepEqual([opener?.teamAId, opener?.teamBId], [at("A1"), at("A2")], "the opening match is A1 v A2");
   assert.equal(fixtures.filter((f) => f.stage === "league").length, 28);
   assert.equal(fixtures.find((f) => f.code === "F")?.overs, 8);
   assert.equal(fixtures.find((f) => f.code === "QF1")?.teamALabel, "Group A #1");
