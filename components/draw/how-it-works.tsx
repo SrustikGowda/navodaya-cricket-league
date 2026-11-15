@@ -16,7 +16,7 @@ function sentence(code: string): string {
 
 /**
  * The idea of the draw before it happens, using only positions. Teams are drawn into positions; every position then
- * plays the same three opponents, taken from last year's pattern. The lines draw themselves when the section scrolls into view.
+ * plays the same three fixed opponents. The lines draw themselves when the section scrolls into view.
  */
 export function HowFixturesWork() {
   const [focus, setFocus] = useState<string>("A1");
@@ -49,7 +49,7 @@ export function HowFixturesWork() {
         <h2 id="dr-how-title">How the fixtures are made</h2>
       </div>
       <p className="dr-how-lead">
-        The draw puts teams into positions, A1, A2 and so on. Every position plays the same three opponents, set from last year&apos;s pattern. So the draw decides who sits where, and the fixtures follow.
+        The draw puts teams into positions, A1, A2 and so on. Every position plays the same three opponents, so the draw decides who sits where, and the fixtures follow.
       </p>
       <div className="dr-how-grid">
         {(["A", "B"] as const).map((group) => {

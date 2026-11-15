@@ -513,7 +513,7 @@ function FixtureCreation({ group, plan, names, matches, reduced }: { group: Grou
   return (
     <div className="dr-fixcreate dr-fixcreate--web">
       <div className="dr-fixcreate-head">
-        <span>League fixtures from the 2025 pattern</span>
+        <span>League fixtures</span>
         <b>Group {group}</b>
         <small>
           {own} matches{group === "A" ? " + the BYE" : ""} · every team has 3 fixtures
