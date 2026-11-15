@@ -157,8 +157,8 @@ function assertPlanPromises(plan: DrawPlan, label: string) {
   assert.equal(plan.result.assignments.filter((a) => a.group === "B").length, 10, `${label}: ten in Group B`);
 
   // seeds
-  assert.deepEqual([champion?.group, champion?.slot], ["A", 1], `${label}: champion at A1`);
-  assert.equal(runnerUp?.group, "B", `${label}: runner-up in B`);
+  assert.notEqual(champion?.group, runnerUp?.group, `${label}: champion and runner-up in different groups`);
+  for (const seed of [champion, runnerUp, semiOne, semiTwo]) assert.ok(!(seed?.group === "A" && seed.slot === 9), `${label}: no seed at A9`);
   assert.notEqual(semiOne?.group, semiTwo?.group, `${label}: one losing semifinalist per group`);
   assert.equal([champion, runnerUp, semiOne, semiTwo].filter((a) => a?.group === "A").length, 2);
   assert.equal([champion, runnerUp, semiOne, semiTwo].filter((a) => a?.group === "B").length, 2);
@@ -195,8 +195,9 @@ function assertPlanPromises(plan: DrawPlan, label: string) {
 
   // opening match
   assert.equal(league[0]?.number, 1);
-  assert.equal(league[0]?.teamA.teamId, idOf("4s-11"));
+  assert.equal(league[0]?.teamA.slot, "A1");
   assert.equal(league[0]?.teamB.slot, "A2");
+  assert.equal(league[0]?.teamB.teamId, plan.result.openingOpponentId);
   assert.equal(league[0]?.startMinutes, 7 * 60);
   assert.equal(league[0]?.ground, "A");
 
@@ -245,7 +246,6 @@ test("Ground A is shared out: every team plays a league match on each ground, an
     "one match on each ground in every slot: both grounds are equally busy",
   );
 
-  const champion = idOf("4s-11");
   const twoOnA = new Map<string, number>();
   const draws = 400;
   for (let n = 0; n < draws; n += 1) {
@@ -263,9 +263,8 @@ test("Ground A is shared out: every team plays a league match on each ground, an
     }
     assert.equal(teamsWithTwoOnA, 9);
   }
-  // The champion is always at A1: the opening match on Ground A, then two on Ground B. Every other team's share is drawn.
-  assert.equal(twoOnA.get(champion) ?? 0, 0);
-  for (const team of roster.filter((t) => t.id !== champion)) {
+  // Which teams get two on Ground A is drawn, for the champion as for everyone else.
+  for (const team of roster) {
     const times = twoOnA.get(team.id) ?? 0;
     assert.ok(times > 0 && times < draws, `${team.name} gets two on Ground A in some draws and not in others (${times}/${draws})`);
   }
@@ -295,14 +294,19 @@ test("2000 randomized draws all keep every seeded, fixture, BYE and schedule pro
 test("seeded teams are placed by construction, A9 is a fair draw among the 15 unseeded teams, and the randomness is real", () => {
   const draws = 6000;
   const byeCount = new Map<string, number>();
-  const runnerSlots = new Array<number>(11).fill(0);
+  const runnerAt = new Map<string, number>();
+  const championAt = new Map<string, number>();
+  let championInA = 0;
   let semiInA = 0;
   const places = new Map<string, Set<string>>();
   for (let n = 0; n < draws; n += 1) {
     const plan = generatePlan({ roster, days: DAYS, entropy: entropyFor(100_000 + n) });
     byeCount.set(plan.bye.teamId, (byeCount.get(plan.bye.teamId) ?? 0) + 1);
     const runner = plan.result.assignments.find((a) => a.teamId === idOf("RCB United"));
-    runnerSlots[runner?.slot as number] = (runnerSlots[runner?.slot as number] ?? 0) + 1;
+    const champ = plan.result.assignments.find((a) => a.teamId === idOf("4s-11"));
+    runnerAt.set(`${runner?.group}${runner?.slot}`, (runnerAt.get(`${runner?.group}${runner?.slot}`) ?? 0) + 1);
+    championAt.set(`${champ?.group}${champ?.slot}`, (championAt.get(`${champ?.group}${champ?.slot}`) ?? 0) + 1);
+    if (champ?.group === "A") championInA += 1;
     if (plan.result.assignments.find((a) => a.teamId === idOf("JNV Junglees"))?.group === "A") semiInA += 1;
     for (const a of plan.result.assignments) {
       const set = places.get(a.teamId) ?? new Set<string>();
@@ -317,7 +321,13 @@ test("seeded teams are placed by construction, A9 is a fair draw among the 15 un
     assert.ok(got > 300 && got < 500, `${team.name} had the BYE ${got} times of ${draws} (expected about 400)`);
   }
   for (const id of SEED_IDS()) assert.equal(byeCount.get(id) ?? 0, 0, "a seeded team never has the BYE");
-  for (let slot = 1; slot <= 10; slot += 1) assert.ok((runnerSlots[slot] as number) > 480 && (runnerSlots[slot] as number) < 720, `runner-up at B${slot}: ${runnerSlots[slot]}`);
+  // A seed is in either group about half the time, and takes any position of that group (A9 is the BYE's, so A1 to A8).
+  for (const [label, counts] of [["the champion", championAt], ["the runner-up", runnerAt]] as const) {
+    for (let slot = 1; slot <= 8; slot += 1) assert.ok((counts.get(`A${slot}`) ?? 0) > 250 && (counts.get(`A${slot}`) ?? 0) < 500, `${label} at A${slot}: ${counts.get(`A${slot}`)} of ${draws} (expected about 375)`);
+    assert.equal(counts.get("A9") ?? 0, 0, `${label} is never at A9`);
+    for (let slot = 1; slot <= 10; slot += 1) assert.ok((counts.get(`B${slot}`) ?? 0) > 200 && (counts.get(`B${slot}`) ?? 0) < 400, `${label} at B${slot}: ${counts.get(`B${slot}`)} of ${draws} (expected about 300)`);
+  }
+  assert.ok(championInA > 2700 && championInA < 3300, `the champion in Group A ${championInA} of ${draws}`);
   assert.ok(semiInA > 2700 && semiInA < 3300, `JNV Junglees in Group A ${semiInA} of ${draws}`);
   // An unseeded team can end up in many different positions.
   for (const team of unseeded) assert.ok((places.get(team.id)?.size ?? 0) >= 15, `${team.name} landed in many positions`);
@@ -411,7 +421,7 @@ test("changing the times never changes who plays whom, and the same rules guard 
   assert.equal(opponents(moved), opponents(plan.matches), "opponents, codes and grounds are untouched");
   assert.notEqual(moved[0]?.startMinutes, plan.matches[0]?.startMinutes);
   assert.deepEqual(checkSchedule(timedMatches(moved)).errors, []);
-  assert.equal(moved[0]?.teamA.teamId, idOf("4s-11"), "the champion still opens");
+  assert.equal(moved[0]?.teamA.teamId, plan.matches[0]?.teamA.teamId, "the same teams still open");
 
   const base = timedMatches(plan.matches);
   assert.deepEqual(checkSchedule(base).errors, []);

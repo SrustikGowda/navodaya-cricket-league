@@ -33,6 +33,7 @@ test("the 19-team, two-group format is shown, and nothing from the old format is
   await expect(how.locator(".gw").nth(0).locator(".gw-edge")).toHaveCount(14);
   await expect(how.locator(".gw").nth(1).locator(".gw-edge")).toHaveCount(15);
   await expect(how.getByText(/^A1 plays A2, A5 and A6\. 1 on Ground A, 2 on Ground B\. A1 v A2 is the opening match\.$/)).toBeVisible();
+  await expect(how.getByText(/defending champion/i)).toHaveCount(0);
   await how.locator(".gw-node").filter({ hasText: /^A9$/ }).click();
   await expect(how.getByText("A9 plays A4, A8 and a BYE. 1 on Ground A, 1 on Ground B.")).toBeVisible();
   await how.locator(".gw-node").filter({ hasText: /^B6$/ }).click();
@@ -62,6 +63,8 @@ test("the rules page is complete, searchable, linked from the menu, and fits a p
   await expect(page.locator("#match")).toContainText("League matches are 6 overs an innings");
   await expect(page.locator("#match")).toContainText("Quarterfinals, semifinals and the final are 8 overs an innings");
   await expect(page.locator("#fielding")).toContainText("Powerplay");
+  await expect(page.locator("#format")).toContainText("are placed in different groups at random");
+  await expect(page.locator("#format")).not.toContainText("placed at A1");
   await expect(page.getByText(/\bsite\b|website|Fixtures page|substitute fielder|head-to-head/i)).toHaveCount(0);
   await expect(page.locator("#format")).toContainText("9 teams play two of their three on Ground A and 9 play two on Ground B");
   await expect(page.getByText(/NCL 14|November 2025|Jagadeesh/)).toHaveCount(0);
@@ -152,9 +155,9 @@ test("a trial run plays the whole draw, is marked as unofficial, repeats, and wr
 
   // The seeded rules are visible in the result.
   const at = (code: string) => stage.locator(`[data-slot="${code}"]`);
-  await expect(at("A1")).toContainText("4s-11");
-  await expect(stage.getByRole("region", { name: "Group B" })).toContainText("RCB United");
+  // The champion and the runner-up are in different groups, and so are the other two semifinalists, whichever way it fell.
   const inA = async (name: RegExp) => (await stage.getByRole("region", { name: "Group A" }).getByText(name).count()) > 0;
+  expect(await inA(/4s-11/)).not.toBe(await inA(/RCB United/));
   expect(await inA(/Jnv Junglees/)).not.toBe(await inA(/Balehonnur Bulls/));
   await expect(stage.locator('[data-slot^="A"]')).toHaveCount(9);
   await expect(stage.locator('[data-slot^="B"]')).toHaveCount(10);
@@ -261,11 +264,10 @@ test("the real run needs an organizer, the right password and a confirmation", a
   // Once published there is no Real Run button at all, only the status and a replay.
   await expect(page.getByRole("button", { name: "REAL RUN" })).toHaveCount(0);
 
-  // The opening match: defending champion at A1 against A2, Saturday 7:00 AM, Ground A.
+  // The opening match: A1 against A2, Saturday 7:00 AM, Ground A.
   await expect(page.getByRole("tab", { name: "Day 1 · Saturday" })).toHaveAttribute("aria-selected", "true");
   const opener = page.locator('.dr-match[data-code="M01"]');
   await expect(opener).toHaveAttribute("aria-label", /Saturday 7:00 AM, Ground A/);
-  await expect(opener).toContainText("4s-11");
   await expect(page.locator(".dr-row", { has: opener })).toContainText("7:00 AM");
   await expect(page.locator(".dr-views--trial")).toHaveCount(0);
   await expect(page.locator(".dr-match")).toHaveCount(20);
@@ -439,7 +441,6 @@ test("an admin marks fees, picks the knockouts, enters awards, then deletes the 
   await times.getByRole("button", { name: /^Apply: move/ }).click();
   await expect(times.getByText(/matches were moved/)).toBeVisible();
   await page.goto("/2026/fixtures");
-  await expect(page.locator('.dr-match[data-code="M01"]')).toContainText("4s-11");
   await expect(page.locator(".dr-row", { has: page.locator('.dr-match[data-code="M01"]') })).toContainText("7:30 AM");
   await expect(page.locator('.dr-match[data-code="M01"] .dr-m-moved')).toHaveText("Rescheduled");
   await page.goto("/admin/draw");

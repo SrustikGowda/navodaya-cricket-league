@@ -126,10 +126,9 @@ export function buildRulebook(input: RulebookInput): Rulebook {
         },
         { text: groundShareText() },
         {
-          text: `As per NCL tradition, the defending champions, ${seed("champion")}, play the first match of the tournament. They are placed at A1, and the opening match is A1 v A2.`,
+          text: `As per NCL tradition, the defending champions, ${seed("champion")}, and the runners-up, ${seed("runner_up")}, are placed in different groups at random.`,
           items: [
-            `The 2025 runners-up, ${seed("runner_up")}, are placed in Group B.`,
-            `The other two 2025 semifinalists, ${seed("semifinalist_1")} and ${seed("semifinalist_2")}, go one to each group.`,
+            `The other two 2025 semifinalists, ${seed("semifinalist_1")} and ${seed("semifinalist_2")}, go one to each group at random.`,
             "Every other position is drawn at random.",
           ],
         },

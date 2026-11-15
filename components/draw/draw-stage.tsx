@@ -290,7 +290,7 @@ export function DrawStage({ plan, mode, teams, drawRef, revealAt, countdown, onC
 
         {beat.kind === "seeds-intro" ? (
           <Caption kicker="Seeded first" title="The four NCL 2025 semifinalists" ms={beat.dur}>
-            The champions take <b>A1</b> and play the opening match. The runners-up go to <b>Group B</b>. The other two semifinalists go <b>one to each group</b>. No seeded team can receive the BYE.
+            The champions and the runners-up go to <b>different groups</b>, at random. The other two semifinalists go <b>one to each group</b>, at random. No seeded team can receive the BYE.
           </Caption>
         ) : null}
         {beat.kind === "draw-intro" ? (
@@ -481,7 +481,7 @@ function FlyCard({
       <TeamMark name={name} logoUrl={logos.get(step.teamId)} size={64} />
       <b className="dr-fly-name">{name}</b>
       <span className="dr-fly-dest" style={{ animationDelay: `${Math.round(beat.revealMs * 0.55)}ms` }}>
-        {step.group === "A" && step.slot === 1 ? "Group A · A1 · opens the tournament" : `Group ${step.group} · ${step.group}${step.slot}`}
+        {step.group === "A" && step.slot === 1 ? "Group A · A1 · opening match" : `Group ${step.group} · ${step.group}${step.slot}`}
       </span>
     </div>
   );

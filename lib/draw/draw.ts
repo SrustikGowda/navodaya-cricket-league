@@ -11,9 +11,9 @@ const range = (from: number, to: number) => Array.from({ length: to - from + 1 }
  * Seeded random group draw for 19 teams in two groups.
  *
  * The conditions are built into how positions are chosen, so no draw can break them:
- *  - the defending champion takes A1, so the opening match is A1 v A2;
- *  - the runner-up takes Group B, at a random position;
- *  - the other two 2025 semifinalists go one to each group, in a random order and at random positions;
+ *  - the defending champion and the runner-up go to different groups, which of the two groups is random;
+ *  - the other two 2025 semifinalists go one to each group, in a random order;
+ *  - every seed takes a random position in its group, so each group starts with two seeds;
  *  - A9 carries the BYE and goes to one of the 15 unseeded teams, chosen uniformly;
  *  - the other 14 unseeded teams fill every remaining position through a random one-to-one pairing.
  * Nothing is checked and corrected afterwards.
@@ -34,14 +34,17 @@ export function drawGroups(roster: RosterTeam[], seeds: ResolvedSeeds, rng: Rng)
   };
   const free = (group: GroupCode, slots: number[]) => slots.filter((slot) => !taken.has(`${group}${slot}`));
 
-  // Seeds. Group A's positions A1 (champion) and A9 (BYE) are reserved, so its semifinalist takes A2-A8.
-  const champion = place("A", 1, seeds.championId, "champion");
+  // Seeds. Position A9 carries the BYE and is never a seed's, so Group A's seeds take A1 to A8.
+  const seedSlot = (group: GroupCode) => pick(free(group, range(1, group === "A" ? GROUP_TEAMS.A - 1 : GROUP_TEAMS.B)), rng);
+  const championGroup: GroupCode = rng.int(2) === 0 ? "A" : "B";
+  const runnerUpGroup: GroupCode = championGroup === "A" ? "B" : "A";
   const semiInA = rng.int(2);
   const semiAId = seeds.semifinalistIds[semiInA] as string;
   const semiBId = seeds.semifinalistIds[1 - semiInA] as string;
-  const semiA = place("A", pick(range(2, GROUP_TEAMS.A - 1), rng), semiAId, "semifinalist");
-  const runnerUp = place("B", pick(range(1, GROUP_TEAMS.B), rng), seeds.runnerUpId, "runner_up");
-  const semiB = place("B", pick(free("B", range(1, GROUP_TEAMS.B)), rng), semiBId, "semifinalist");
+  const champion = place(championGroup, seedSlot(championGroup), seeds.championId, "champion");
+  const runnerUp = place(runnerUpGroup, seedSlot(runnerUpGroup), seeds.runnerUpId, "runner_up");
+  const semiA = place("A", seedSlot("A"), semiAId, "semifinalist");
+  const semiB = place("B", seedSlot("B"), semiBId, "semifinalist");
 
   // The BYE: one of the 15 unseeded teams, equally likely, takes A9.
   const unseeded = roster.filter((team) => !seedIds.includes(team.id)).map((team) => team.id).sort();
