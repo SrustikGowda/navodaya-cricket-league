@@ -1,9 +1,9 @@
-// Points, net run rate and qualification for the NCL 2026 league. Pure and client-safe.
+// Points, net run rate and qualification for the NCL 2026 league (two groups, top four each). Pure and client-safe.
 // Overs are always handled as balls (6 per over), never as decimals.
 
-import { POINTS } from "./config";
+import { LEAGUE_MATCHES_BY_GROUP, POINTS, QUALIFIERS_PER_GROUP } from "./config";
 import { pairQuarterfinals, type Qualifier } from "./bracket";
-import type { GroupCode } from "./types";
+import { GROUP_CODES, type GroupCode } from "./types";
 
 export type Innings = {
   runs: number;
@@ -37,6 +37,8 @@ export type StandingRow = {
   lost: number;
   tied: number;
   noResult: number;
+  /** BYE walkovers (0 or 1). A BYE is worth 2 points but is not a match played and has no runs or net run rate. */
+  byes: number;
   points: number;
   runsFor: number;
   ballsFor: number;
@@ -118,6 +120,7 @@ function blankRow(team: Team): StandingRow {
     lost: 0,
     tied: 0,
     noResult: 0,
+    byes: 0,
     points: 0,
     runsFor: 0,
     ballsFor: 0,
@@ -129,8 +132,14 @@ function blankRow(team: Team): StandingRow {
   };
 }
 
-export function computeRows(teams: Team[], scores: MatchScore[]): Map<string, StandingRow> {
+export function computeRows(teams: Team[], scores: MatchScore[], byeTeamIds: string[] = []): Map<string, StandingRow> {
   const rows = new Map(teams.map((team) => [team.teamId, blankRow(team)]));
+  for (const id of byeTeamIds) {
+    const row = rows.get(id);
+    if (!row) continue;
+    row.byes += 1;
+    row.points += POINTS.bye;
+  }
   for (const score of scores) {
     const a = rows.get(score.teamAId);
     const b = rows.get(score.teamBId);
@@ -253,17 +262,14 @@ export function rankRows(
   return { rows: out, ties };
 }
 
-export type QualificationStatus = "qualified" | "wildcard" | "eliminated" | "pending";
-
-export type WildcardRow = StandingRow & { wildcardRank: number; status: QualificationStatus };
+export type QualificationStatus = "qualified" | "eliminated" | "pending";
 
 export type Qualification = {
   groups: Record<GroupCode, RankedTable>;
-  wildcards: { rows: WildcardRow[]; ties: TieNote[] };
   leagueMatchesPlayed: number;
   leagueComplete: boolean;
   groupComplete: Record<GroupCode, boolean>;
-  /** Direct and wildcard qualifiers with seeds 1-8. Null until the league is complete and ties are settled. */
+  /** The top four of each group, ranked 1-4 inside the group. Null until the league is complete and ties are settled. */
   qualifiers: Qualifier[] | null;
   /** Plain-language reasons the bracket cannot be filled yet. Empty when it can. */
   blockers: string[];
@@ -276,77 +282,48 @@ export function computeQualification(
   teams: Team[],
   scores: MatchScore[],
   decisions: OrganizerDecision[] = [],
-  matchesPerGroup = 9,
+  byeTeamIds: string[] = [],
+  matchesPerGroup: Record<GroupCode, number> = LEAGUE_MATCHES_BY_GROUP,
 ): Qualification {
-  const rows = computeRows(teams, scores);
+  const rows = computeRows(teams, scores, byeTeamIds);
   const groups = {} as Record<GroupCode, RankedTable>;
   const groupComplete = {} as Record<GroupCode, boolean>;
   const blockers: string[] = [];
   const blockingTies: TieNote[] = [];
-  for (const group of ["A", "B", "C"] as const) {
+  for (const group of GROUP_CODES) {
     const members = teams.filter((team) => team.group === group).map((team) => rows.get(team.teamId) as StandingRow);
-    const scoresInGroup = scores.filter((score) => members.some((row) => row.teamId === score.teamAId));
-    groups[group] = rankRows(members, scoresInGroup, `group:${group}`, decisions, 3);
-    groupComplete[group] = scoresInGroup.length >= matchesPerGroup;
+    const ids = new Set(members.map((row) => row.teamId));
+    const scoresInGroup = scores.filter((score) => ids.has(score.teamAId));
+    groups[group] = rankRows(members, scoresInGroup, `group:${group}`, decisions, QUALIFIERS_PER_GROUP);
+    groupComplete[group] = scoresInGroup.length >= matchesPerGroup[group];
   }
 
   const leagueMatchesPlayed = scores.length;
-  const leagueComplete = (["A", "B", "C"] as const).every((group) => groupComplete[group]);
-
-  // Wildcards: the three third-placed teams, ranked across groups.
-  const thirds = (["A", "B", "C"] as const).map((group) => groups[group].rows[2]).filter((row): row is StandingRow => Boolean(row));
-  const wildcardTable = rankRows(
-    thirds.map((row) => ({ ...row, tied_unresolved: false })),
-    scores,
-    "wildcard",
-    decisions,
-    3,
-  );
-  const wildcardRows: WildcardRow[] = wildcardTable.rows.map((row, index) => ({
-    ...row,
-    wildcardRank: index + 1,
-    status: !leagueComplete ? "pending" : index < 2 ? "wildcard" : "eliminated",
-  }));
+  const leagueComplete = GROUP_CODES.every((group) => groupComplete[group]);
 
   const status: Record<string, QualificationStatus> = {};
-  for (const group of ["A", "B", "C"] as const) {
+  for (const group of GROUP_CODES) {
     groups[group].rows.forEach((row, index) => {
       if (!groupComplete[group]) status[row.teamId] = "pending";
-      else if (index < 2) status[row.teamId] = "qualified";
-      else if (index === 2) status[row.teamId] = leagueComplete ? (wildcardRows.find((w) => w.teamId === row.teamId)?.status ?? "pending") : "pending";
-      else status[row.teamId] = "eliminated";
+      else status[row.teamId] = index < QUALIFIERS_PER_GROUP ? "qualified" : "eliminated";
     });
   }
 
   let qualifiers: Qualifier[] | null = null;
   if (leagueComplete) {
-    for (const group of ["A", "B", "C"] as const) {
+    for (const group of GROUP_CODES) {
       for (const tie of groups[group].ties.filter((t) => t.blocking)) {
         blockingTies.push(tie);
         blockers.push(`Group ${group}: teams level for place ${tie.positions[0]}${tie.positions[1] > tie.positions[0] ? `-${tie.positions[1]}` : ""}. Organizer decision required.`);
       }
     }
-    for (const tie of wildcardTable.ties.filter((t) => t.blocking)) {
-      blockingTies.push(tie);
-      blockers.push(`Wildcards: ${tie.teamIds.length} third-placed teams are level for place ${tie.positions[0]}${tie.positions[1] > tie.positions[0] ? `-${tie.positions[1]}` : ""}. Organizer decision required.`);
-    }
     if (blockers.length === 0) {
-      const winners = (["A", "B", "C"] as const).map((group) => groups[group].rows[0] as StandingRow);
-      const runners = (["A", "B", "C"] as const).map((group) => groups[group].rows[1] as StandingRow);
-      const wild = wildcardTable.rows.slice(0, 2);
-      const seedBand = (band: StandingRow[], scope: string, firstSeed: number) => {
-        const ranked = rankRows(band.map((row) => ({ ...row, tied_unresolved: false })), scores, scope, decisions, band.length);
-        for (const tie of ranked.ties) {
-          blockingTies.push(tie);
-          blockers.push(`${scope === "winners" ? "Group winners" : scope === "runners" ? "Runners-up" : "Wildcards"}: ${tie.teamIds.length} teams are level for seeding. Organizer decision required.`);
-        }
-        return ranked.rows.map((row, index) => ({ teamId: row.teamId, group: row.group, seed: firstSeed + index }));
-      };
-      const seeded = [...seedBand(winners, "winners", 1), ...seedBand(runners, "runners", 4), ...seedBand(wild, "wildcard-seeds", 7)];
-      if (blockers.length === 0) qualifiers = seeded;
+      qualifiers = GROUP_CODES.flatMap((group) =>
+        groups[group].rows.slice(0, QUALIFIERS_PER_GROUP).map((row, index) => ({ teamId: row.teamId, group, rank: index + 1 })),
+      );
     }
   }
-  return { groups, wildcards: { rows: wildcardRows, ties: wildcardTable.ties }, leagueMatchesPlayed, leagueComplete, groupComplete, qualifiers, blockers, blockingTies, status };
+  return { groups, leagueMatchesPlayed, leagueComplete, groupComplete, qualifiers, blockers, blockingTies, status };
 }
 
 export { pairQuarterfinals };

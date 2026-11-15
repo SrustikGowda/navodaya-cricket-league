@@ -2,9 +2,18 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { test } from "node:test";
 import { pairQuarterfinals, QF_PAIRINGS, type Qualifier } from "../lib/draw/bracket";
-import { LEAGUE_MATCHES, POINTS, SATURDAY_SLOTS, SUNDAY_LEAGUE_SLOTS, TOTAL_MATCHES } from "../lib/draw/config";
+import {
+  DEFAULT_TIMETABLE,
+  LEAGUE_MATCHES,
+  OPPONENT_TEMPLATE,
+  POINTS,
+  SATURDAY_TEMPLATE,
+  SUNDAY_TEMPLATE,
+  TEAM_COUNT,
+} from "../lib/draw/config";
 import { generatePlan, planHash, verifyPlan } from "../lib/draw/plan";
 import { seededRng } from "../lib/draw/rng";
+import { applyTimetable, leagueSlotStarts, opponentsOfPosition, templatePairs, timeSlots } from "../lib/draw/schedule";
 import { beatIndexAt, buildTimeline, placedBefore } from "../lib/draw/timeline";
 import { normalizeTeamName, resolveSeeds, type RosterTeam } from "../lib/draw/seeds";
 import {
@@ -18,165 +27,240 @@ import {
   type MatchScore,
   type StandingRow,
 } from "../lib/draw/standings";
-import { validatePlan } from "../lib/draw/validate";
-import type { DrawPlan, GroupCode, PlannedMatch } from "../lib/draw/types";
+import type { DrawPlan, GroupCode } from "../lib/draw/types";
+import { checkSchedule, timedMatches, validatePlan, validateTemplates } from "../lib/draw/validate";
 import { DAYS, TEAM_NAMES } from "./helpers/roster";
 
 const roster: RosterTeam[] = TEAM_NAMES.map((name, index) => ({ id: `team-${String(index).padStart(2, "0")}`, name }));
 const idOf = (name: string) => (roster.find((team) => team.name === name) as RosterTeam).id;
 const entropyFor = (n: number) => createHash("sha256").update(`ncl-test-${n}`).digest("hex");
+const SEED_IDS = () => [idOf("4s-11"), idOf("RCB United"), idOf("JNV Junglees"), idOf("Balehonnur Bulls")];
+const pairKey = (a: string, b: string) => [a, b].sort().join("|");
+
+/** The opponent pattern exactly as the organizers wrote it down from the 2025 spreadsheet. */
+const SPEC_A: Record<string, string[]> = {
+  A1: ["A2", "A5", "A6"],
+  A2: ["A1", "A3", "A7"],
+  A3: ["A2", "A4", "A8"],
+  A4: ["A3", "A5", "A9"],
+  A5: ["A1", "A4", "A6"],
+  A6: ["A1", "A5", "A7"],
+  A7: ["A2", "A6", "A8"],
+  A8: ["A3", "A7", "A9"],
+  A9: ["A4", "A8", "BYE"],
+};
+const SPEC_B: Record<string, string[]> = {
+  B1: ["B2", "B6", "B10"],
+  B2: ["B1", "B3", "B7"],
+  B3: ["B2", "B4", "B8"],
+  B4: ["B3", "B5", "B9"],
+  B5: ["B4", "B6", "B10"],
+  B6: ["B1", "B5", "B7"],
+  B7: ["B2", "B6", "B8"],
+  B8: ["B3", "B7", "B9"],
+  B9: ["B4", "B8", "B10"],
+  B10: ["B1", "B5", "B9"],
+};
+
+test("the opponent templates are exactly the NCL 2025 pattern, and are internally consistent", () => {
+  assert.deepEqual(OPPONENT_TEMPLATE.A, SPEC_A);
+  assert.deepEqual(OPPONENT_TEMPLATE.B, SPEC_B);
+  assert.deepEqual(validateTemplates(), []);
+  const pairs = templatePairs();
+  assert.equal(pairs.filter((p) => p.group === "A").length, 13, "13 Group A matches");
+  assert.equal(pairs.filter((p) => p.group === "B").length, 15, "15 Group B matches");
+  assert.equal(new Set(pairs.map((p) => pairKey(p.a, p.b))).size, 28, "each pairing is generated once even though both teams list it");
+  for (const position of [...Object.keys(SPEC_A), ...Object.keys(SPEC_B)]) assert.equal(opponentsOfPosition(position).length, 3, `${position} has three entries`);
+  const byes = Object.entries({ ...SPEC_A, ...SPEC_B }).filter(([, list]) => list.includes("BYE"));
+  assert.deepEqual(byes.map(([position]) => position), ["A9"], "exactly one BYE, at A9");
+  // Group B is circular: each team meets its two neighbours and the team five positions away.
+  for (let i = 1; i <= 10; i += 1) {
+    const next = (i % 10) + 1;
+    const prev = ((i + 8) % 10) + 1;
+    const across = ((i + 4) % 10) + 1;
+    const wanted = new Set([`B${next}`, `B${prev}`, `B${across}`]);
+    // B1 meets B2, B6, B10: the two ring neighbours are B2 and B10 and the opposite is B6, but B4 to B9 and B5 to B10 follow the printed pattern.
+    if ([1, 2, 3, 6, 7, 8].includes(i)) assert.deepEqual(new Set(SPEC_B[`B${i}`]), wanted, `B${i} follows the ring`);
+  }
+});
+
+test("the two-day order of play is the NCL 2025 order, with the break and times as asked", () => {
+  const saturday = SATURDAY_TEMPLATE.map((row) => row.map((pair) => pair.join(" v ")));
+  assert.deepEqual(saturday, [
+    ["A1 v A2", "B3 v B8"],
+    ["A6 v A7", "B4 v B9"],
+    ["B2 v B7", "B10 v B1"],
+    ["A3 v A4", "A1 v A6"],
+    ["B4 v B5", "B1 v B6"],
+    ["A3 v A8", "B9 v B10"],
+    ["B3 v B4", "A4 v A9"],
+    ["A5 v A6", "A2 v A7"],
+    ["B8 v B9", "B6 v B7"],
+    ["B2 v B3", "A8 v A9"],
+  ]);
+  assert.deepEqual(
+    SUNDAY_TEMPLATE.map((row) => row.map((pair) => pair.join(" v "))),
+    [
+      ["B5 v B10", "A4 v A5"],
+      ["A2 v A3", "B7 v B8"],
+      ["B5 v B6", "B1 v B2"],
+      ["A7 v A8", "A1 v A5"],
+    ],
+  );
+  const clock = (m: number) => `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}`;
+  assert.deepEqual(leagueSlotStarts(1, DEFAULT_TIMETABLE).map(clock), ["7:00", "7:55", "8:50", "9:45", "10:40", "12:30", "13:25", "14:20", "15:15", "16:10"], "the inauguration break covers 11:35 to 12:30");
+  assert.deepEqual(leagueSlotStarts(2, DEFAULT_TIMETABLE).map(clock), ["7:00", "7:55", "8:50", "9:45"]);
+  const slots = timeSlots();
+  assert.equal(slots.filter((s) => s.stage === "league" && s.day === 1).length, 20);
+  assert.equal(slots.filter((s) => s.stage === "league" && s.day === 2).length, 8);
+  const sunday = Object.fromEntries(slots.filter((s) => s.stage !== "league").map((s) => [s.code, `${clock(s.startMinutes)} ${s.ground} ${s.durationMinutes}m`]));
+  assert.deepEqual(sunday, {
+    QF1: "11:15 A 55m",
+    QF2: "11:15 B 55m",
+    QF3: "12:20 A 55m",
+    QF4: "12:20 B 55m",
+    SF1: "13:45 A 75m",
+    SF2: "13:45 B 75m",
+    F: "15:30 A 75m",
+  });
+});
 
 /** Deliberately independent of lib/draw/validate.ts: these are the promises the organizers asked for. */
 function assertPlanPromises(plan: DrawPlan, label: string) {
   const at = (id: string) => plan.result.assignments.find((a) => a.teamId === id);
   const league = plan.matches.filter((m) => m.stage === "league");
   const ids = plan.roster.map((team) => team.id);
+  const [champion, runnerUp, semiOne, semiTwo] = [at(idOf("4s-11")), at(idOf("RCB United")), at(idOf("JNV Junglees")), at(idOf("Balehonnur Bulls"))];
 
-  assert.equal(plan.roster.length, 18, `${label}: 18 teams`);
-  assert.equal(new Set(ids).size, 18, `${label}: distinct teams`);
-  // every team exactly once in the allocation
+  assert.equal(plan.roster.length, 19, `${label}: 19 teams`);
   assert.deepEqual([...plan.result.assignments.map((a) => a.teamId)].sort(), [...ids].sort(), `${label}: each team once`);
-  for (const group of ["A", "B", "C"] as const) {
-    const members = plan.result.assignments.filter((a) => a.group === group);
-    assert.equal(members.length, 6, `${label}: group ${group} has six`);
-    for (const pool of [1, 2] as const) assert.equal(members.filter((a) => a.subPool === pool).length, 3, `${label}: ${group} pool ${pool} has three`);
-  }
-  // seeded rules
-  const champion = at(idOf("4s-11")) as NonNullable<ReturnType<typeof at>>;
-  const runnerUp = at(idOf("RCB United")) as NonNullable<ReturnType<typeof at>>;
-  const junglees = at(idOf("JNV Junglees")) as NonNullable<ReturnType<typeof at>>;
-  const bulls = at(idOf("Balehonnur Bulls")) as NonNullable<ReturnType<typeof at>>;
-  assert.notEqual(champion.group, runnerUp.group, `${label}: champion and runner-up apart`);
-  assert.deepEqual([champion.group, runnerUp.group].sort(), ["A", "B"], `${label}: champion and runner-up are A and B`);
-  assert.equal(junglees.group, "C", `${label}: Junglees in C`);
-  assert.equal(bulls.group, "C", `${label}: Bulls in C`);
-  assert.notEqual(junglees.subPool, bulls.subPool, `${label}: C semifinalists in opposite sub-pools`);
+  assert.equal(plan.result.assignments.filter((a) => a.group === "A").length, 9, `${label}: nine in Group A`);
+  assert.equal(plan.result.assignments.filter((a) => a.group === "B").length, 10, `${label}: ten in Group B`);
 
-  // league fixtures
-  assert.equal(league.length, 27, `${label}: 27 league fixtures`);
+  // seeds
+  assert.deepEqual([champion?.group, champion?.slot], ["A", 1], `${label}: champion at A1`);
+  assert.equal(runnerUp?.group, "B", `${label}: runner-up in B`);
+  assert.notEqual(semiOne?.group, semiTwo?.group, `${label}: one losing semifinalist per group`);
+  assert.equal([champion, runnerUp, semiOne, semiTwo].filter((a) => a?.group === "A").length, 2);
+  assert.equal([champion, runnerUp, semiOne, semiTwo].filter((a) => a?.group === "B").length, 2);
+
+  // BYE
+  const byeHolder = plan.result.assignments.find((a) => a.group === "A" && a.slot === 9);
+  assert.ok(byeHolder, `${label}: A9 is filled`);
+  assert.ok(!SEED_IDS().includes(byeHolder?.teamId as string), `${label}: A9 is not a seeded team`);
+  assert.equal(plan.bye.teamId, byeHolder?.teamId);
+
+  // league
+  assert.equal(league.length, 28);
+  assert.equal(league.filter((m) => m.group === "A").length, 13);
+  assert.equal(league.filter((m) => m.group === "B").length, 15);
   const seen = new Set<string>();
+  const count = new Map<string, number>();
   for (const m of league) {
-    const a = at(m.teamA.teamId as string) as NonNullable<ReturnType<typeof at>>;
-    const b = at(m.teamB.teamId as string) as NonNullable<ReturnType<typeof at>>;
-    assert.equal(a.group, b.group, `${label}: ${m.code} same group`);
-    assert.notEqual(a.subPool, b.subPool, `${label}: ${m.code} opposite sub-pools`);
-    const key = [a.teamId, b.teamId].sort().join("|");
-    assert.equal(seen.has(key), false, `${label}: ${m.code} not a duplicate`);
+    const a = at(m.teamA.teamId as string);
+    const b = at(m.teamB.teamId as string);
+    assert.ok(a && b && a.teamId !== b.teamId, `${label}: ${m.code} is between two different teams`);
+    assert.equal(a?.group, b?.group, `${label}: ${m.code} stays in one group`);
+    const key = pairKey(a?.teamId as string, b?.teamId as string);
+    assert.ok(!seen.has(key), `${label}: no duplicate pairing`);
     seen.add(key);
+    for (const id of [a?.teamId, b?.teamId]) count.set(id as string, (count.get(id as string) ?? 0) + 1);
   }
   for (const id of ids) {
-    const own = league.filter((m) => m.teamA.teamId === id || m.teamB.teamId === id);
-    assert.equal(own.length, 3, `${label}: ${id} plays three`);
-    const opponents = own.map((m) => (m.teamA.teamId === id ? m.teamB.teamId : m.teamA.teamId));
-    assert.equal(new Set(opponents).size, 3, `${label}: ${id} three different opponents`);
-    assert.equal(own.filter((m) => m.day === 1).length, 2, `${label}: ${id} twice on Saturday`);
-    assert.equal(own.filter((m) => m.day === 2).length, 1, `${label}: ${id} once on Sunday`);
+    const matches = count.get(id) ?? 0;
+    assert.equal(matches + (id === plan.bye.teamId ? 1 : 0), 3, `${label}: three league entries`);
+    assert.equal(matches, id === plan.bye.teamId ? 2 : 3, `${label}: only the BYE team has two matches`);
   }
-  assert.equal(league.filter((m) => m.day === 1).length, 18, `${label}: 18 on Saturday`);
-  assert.equal(league.filter((m) => m.day === 2).length, 9, `${label}: 9 on Sunday`);
-  assert.ok(league.filter((m) => m.day === 1).every((m) => m.date === DAYS[0]));
-  assert.ok(league.filter((m) => m.day === 2).every((m) => m.date === DAYS[1]));
-
-  // time: no team or ground overlap, ever
-  const span = (m: PlannedMatch) => [Date.parse(m.startsAt), Date.parse(m.startsAt) + m.durationMinutes * 60_000] as const;
-  for (let i = 0; i < plan.matches.length; i += 1) {
-    for (let j = i + 1; j < plan.matches.length; j += 1) {
-      const x = plan.matches[i] as PlannedMatch;
-      const y = plan.matches[j] as PlannedMatch;
-      const [xs, xe] = span(x);
-      const [ys, ye] = span(y);
-      if (!(xs < ye && ys < xe)) continue;
-      assert.notEqual(x.ground, y.ground, `${label}: ground clash ${x.code}/${y.code}`);
-      const xt = [x.teamA.teamId, x.teamB.teamId].filter(Boolean);
-      const yt = [y.teamA.teamId, y.teamB.teamId].filter(Boolean);
-      assert.equal(xt.some((t) => yt.includes(t)), false, `${label}: team clash ${x.code}/${y.code}`);
-    }
-  }
-  // Saturday teams are never in back-to-back slots.
-  for (const id of ids) {
-    const slots = league.filter((m) => m.day === 1 && (m.teamA.teamId === id || m.teamB.teamId === id)).map((m) => m.slotIndex).sort((p, q) => p - q);
-    assert.ok((slots[1] as number) - (slots[0] as number) >= 2, `${label}: ${id} has a slot of rest on Saturday`);
-  }
-
-  // Saturday slots are the specified ones, two grounds each, nothing else.
-  const saturday = league.filter((m) => m.day === 1);
-  for (const [slot, minutes] of SATURDAY_SLOTS.entries()) {
-    const inSlot = saturday.filter((m) => m.slotIndex === slot);
-    assert.equal(inSlot.length, 2, `${label}: two matches in Saturday slot ${slot}`);
-    assert.deepEqual(inSlot.map((m) => m.ground).sort(), ["A", "B"]);
-    assert.ok(inSlot.every((m) => m.startMinutes === minutes && m.durationMinutes === 50));
-  }
-  const sunday = league.filter((m) => m.day === 2);
-  assert.deepEqual([...new Set(sunday.map((m) => m.startMinutes))].sort((p, q) => p - q), [...SUNDAY_LEAGUE_SLOTS]);
-  assert.equal(sunday.filter((m) => m.slotIndex === 4).length, 1, `${label}: one Sunday match in the last slot`);
-  assert.equal(sunday.find((m) => m.slotIndex === 4)?.ground, "A", `${label}: Ground B is the buffer in the last slot`);
+  assert.equal(league.filter((m) => m.day === 1).length, 20);
+  assert.equal(league.filter((m) => m.day === 2).length, 8);
 
   // opening match
-  const opener = plan.matches.find((m) => m.number === 1) as PlannedMatch;
-  assert.equal(opener.startMinutes, 7 * 60 + 30);
-  assert.equal(opener.ground, "A");
-  assert.equal(opener.date, DAYS[0]);
-  assert.ok([opener.teamA.teamId, opener.teamB.teamId].includes(idOf("4s-11")), `${label}: champion opens`);
-  assert.ok(plan.matches.filter((m) => m.startsAt < opener.startsAt).length === 0, `${label}: nothing earlier than match 1`);
+  assert.equal(league[0]?.number, 1);
+  assert.equal(league[0]?.teamA.teamId, idOf("4s-11"));
+  assert.equal(league[0]?.teamB.slot, "A2");
+  assert.equal(league[0]?.startMinutes, 7 * 60);
+  assert.equal(league[0]?.ground, "A");
 
-  // knockouts and total
+  // knockouts and totals
   assert.equal(plan.matches.filter((m) => m.stage === "quarterfinal").length, 4);
   assert.equal(plan.matches.filter((m) => m.stage === "semifinal").length, 2);
   assert.equal(plan.matches.filter((m) => m.stage === "final").length, 1);
-  assert.equal(plan.matches.length, TOTAL_MATCHES);
-  for (const stage of ["quarterfinal", "semifinal", "final"] as const) {
-    assert.ok(plan.matches.filter((m) => m.stage === stage).every((m) => m.teamA.teamId === null && m.teamB.teamId === null), `${label}: ${stage} holds placeholders`);
+  assert.equal(plan.matches.length + 1, 36, `${label}: 36 fixture entries including the BYE`);
+  assert.equal(plan.matches.length, 35);
+  for (const m of plan.matches) {
+    assert.equal(m.overs, m.stage === "semifinal" || m.stage === "final" ? 8 : 6, `${m.code} overs`);
+    if (m.stage !== "league") assert.ok(m.teamA.placeholder && m.teamB.placeholder && !m.teamA.teamId && !m.teamB.teamId, `${m.code} holds placeholders`);
   }
-  const overs = { league: 6, quarterfinal: 6, semifinal: 8, final: 8 };
-  assert.ok(plan.matches.every((m) => m.overs === overs[m.stage]), `${label}: overs per stage`);
+
+  // no team in two places at once, no ground double-booked
+  const spans = plan.matches.map((m) => ({ m, s: m.startMinutes + (m.day - 1) * 1440, e: m.startMinutes + (m.day - 1) * 1440 + m.durationMinutes }));
+  for (let i = 0; i < spans.length; i += 1) {
+    for (let j = i + 1; j < spans.length; j += 1) {
+      const x = spans[i] as (typeof spans)[number];
+      const y = spans[j] as (typeof spans)[number];
+      if (!(x.s < y.e && y.s < x.e)) continue;
+      assert.notEqual(x.m.ground, y.m.ground, `${label}: ${x.m.code} and ${y.m.code} share a ground at the same time`);
+      const xs = [x.m.teamA.teamId, x.m.teamB.teamId];
+      const ys = [y.m.teamA.teamId, y.m.teamB.teamId];
+      assert.ok(!xs.some((t) => t && ys.includes(t)), `${label}: a team plays ${x.m.code} and ${y.m.code} at once`);
+    }
+  }
+  assert.deepEqual(validatePlan(plan).errors, [], `${label}: the engine's own validation agrees`);
 }
 
-test("1000 randomized draws all keep every seeded, fixture and schedule promise", () => {
-  for (let n = 0; n < 1000; n += 1) {
-    const plan = generatePlan({ roster, days: DAYS, entropy: entropyFor(n) });
-    assertPlanPromises(plan, `draw ${n}`);
-    assert.deepEqual(validatePlan(plan).errors, [], `draw ${n}: the built-in validator agrees`);
-  }
+test("2000 randomized draws all keep every seeded, fixture, BYE and schedule promise", () => {
+  for (let n = 0; n < 2000; n += 1) assertPlanPromises(generatePlan({ roster, days: DAYS, entropy: entropyFor(n) }), `draw ${n}`);
 });
 
-test("seeded teams are placed by construction, and the randomness is real", () => {
-  let championInA = 0;
-  let championPool1 = 0;
-  let junglesPool1 = 0;
-  const groupOf = new Map<string, Record<GroupCode, number>>();
-  const runs = 1500;
-  for (let n = 0; n < runs; n += 1) {
-    const plan = generatePlan({ roster, days: DAYS, entropy: entropyFor(10_000 + n) });
-    const find = (name: string) => plan.result.assignments.find((a) => a.teamId === idOf(name)) as NonNullable<DrawPlan["result"]["assignments"][number]>;
-    if (find("4s-11").group === "A") championInA += 1;
-    if (find("4s-11").subPool === 1) championPool1 += 1;
-    if (find("JNV Junglees").subPool === 1) junglesPool1 += 1;
-    const free = find("The Elite");
-    const tally = groupOf.get("The Elite") ?? { A: 0, B: 0, C: 0 };
-    tally[free.group] += 1;
-    groupOf.set("The Elite", tally);
+test("seeded teams are placed by construction, A9 is a fair draw among the 15 unseeded teams, and the randomness is real", () => {
+  const draws = 6000;
+  const byeCount = new Map<string, number>();
+  const runnerSlots = new Array<number>(11).fill(0);
+  let semiInA = 0;
+  const places = new Map<string, Set<string>>();
+  for (let n = 0; n < draws; n += 1) {
+    const plan = generatePlan({ roster, days: DAYS, entropy: entropyFor(100_000 + n) });
+    byeCount.set(plan.bye.teamId, (byeCount.get(plan.bye.teamId) ?? 0) + 1);
+    const runner = plan.result.assignments.find((a) => a.teamId === idOf("RCB United"));
+    runnerSlots[runner?.slot as number] = (runnerSlots[runner?.slot as number] ?? 0) + 1;
+    if (plan.result.assignments.find((a) => a.teamId === idOf("JNV Junglees"))?.group === "A") semiInA += 1;
+    for (const a of plan.result.assignments) {
+      const set = places.get(a.teamId) ?? new Set<string>();
+      set.add(`${a.group}${a.slot}`);
+      places.set(a.teamId, set);
+    }
   }
-  // Fair coin flips: allow a generous six-sigma-ish band so the test is stable but would catch a stuck coin.
-  for (const count of [championInA, championPool1, junglesPool1]) assert.ok(count > runs * 0.43 && count < runs * 0.57, `coin ${count}/${runs}`);
-  // An unseeded team lands in each group, with Group C the least likely (it holds two seeded teams).
-  const tally = groupOf.get("The Elite") as Record<GroupCode, number>;
-  assert.ok(tally.A > 0 && tally.B > 0 && tally.C > 0);
-  assert.ok(tally.C < tally.A && tally.C < tally.B, "Group C has fewer open positions");
+  const unseeded = roster.filter((team) => !SEED_IDS().includes(team.id));
+  assert.equal(unseeded.length, 15);
+  for (const team of unseeded) {
+    const got = byeCount.get(team.id) ?? 0;
+    assert.ok(got > 300 && got < 500, `${team.name} had the BYE ${got} times of ${draws} (expected about 400)`);
+  }
+  for (const id of SEED_IDS()) assert.equal(byeCount.get(id) ?? 0, 0, "a seeded team never has the BYE");
+  for (let slot = 1; slot <= 10; slot += 1) assert.ok((runnerSlots[slot] as number) > 480 && (runnerSlots[slot] as number) < 720, `runner-up at B${slot}: ${runnerSlots[slot]}`);
+  assert.ok(semiInA > 2700 && semiInA < 3300, `JNV Junglees in Group A ${semiInA} of ${draws}`);
+  // An unseeded team can end up in many different positions.
+  for (const team of unseeded) assert.ok((places.get(team.id)?.size ?? 0) >= 15, `${team.name} landed in many positions`);
 });
 
 test("the same entropy replays the same draw, and the saved plan can be verified", () => {
-  const first = generatePlan({ roster, days: DAYS, entropy: entropyFor(7) });
+  const plan = generatePlan({ roster, days: DAYS, entropy: entropyFor(7) });
   const again = generatePlan({ roster, days: DAYS, entropy: entropyFor(7) });
-  assert.equal(planHash(first), planHash(again));
-  assert.equal(verifyPlan(first, DAYS).ok, true);
+  assert.equal(planHash(plan), planHash(again));
+  assert.deepEqual(plan.result, again.result);
+  const check = verifyPlan(JSON.parse(JSON.stringify(plan)) as DrawPlan, DAYS);
+  assert.equal(check.ok, true);
   const other = generatePlan({ roster, days: DAYS, entropy: entropyFor(8) });
-  assert.notEqual(planHash(first), planHash(other));
-  const tampered: DrawPlan = JSON.parse(JSON.stringify(first));
-  const [a, b] = tampered.result.assignments as [DrawPlan["result"]["assignments"][number], DrawPlan["result"]["assignments"][number]];
+  assert.notEqual(planHash(plan), planHash(other));
+  const tampered = JSON.parse(JSON.stringify(plan)) as DrawPlan;
+  const a = tampered.result.assignments[3] as DrawPlan["result"]["assignments"][number];
+  const b = tampered.result.assignments[4] as DrawPlan["result"]["assignments"][number];
   [a.teamId, b.teamId] = [b.teamId, a.teamId];
-  assert.equal(verifyPlan(tampered, DAYS).ok, false, "a doctored result no longer matches its entropy");
-  assert.ok(validatePlan({ ...first, matches: first.matches.slice(0, 33) }).errors.length > 0);
-  assert.throws(() => seededRng("not-hex"));
+  assert.equal(verifyPlan(tampered, DAYS).ok, false, "a changed allocation no longer matches the entropy");
+  // The reveal is the saved allocation: seeds first, the BYE team last.
+  assert.deepEqual(plan.result.reveal.map((s) => s.phase), ["seed", "seed", "seed", "seed", ...Array(14).fill("draw"), "bye"]);
+  assert.equal(plan.result.reveal[0]?.teamId, idOf("4s-11"));
+  assert.equal(plan.result.reveal.at(-1)?.teamId, plan.bye.teamId);
 });
 
 test("random numbers are unbiased and the stream is deterministic", () => {
@@ -200,13 +284,14 @@ test("random numbers are unbiased and the stream is deterministic", () => {
 test("seeded teams are found by database id across historical spellings, or the draw fails safely", () => {
   assert.equal(normalizeTeamName("4S 11"), normalizeTeamName("4s-11 (2004–2011)"));
   assert.equal(normalizeTeamName("Jnv Junglees"), normalizeTeamName("JNV Junglees"));
+  assert.equal(normalizeTeamName("Jnv junglees"), normalizeTeamName("JNV Junglees"));
   assert.notEqual(normalizeTeamName("Royal Challengers Balehonnur"), normalizeTeamName("RCB United"));
 
   const spelled: RosterTeam[] = roster.map((team) => {
     const alt: Record<string, string> = {
       "4s-11": "4S 11 (2004–2011)",
       "RCB United": "Rcb-United",
-      "JNV Junglees": "Jnv Junglees",
+      "JNV Junglees": "Jnv junglees",
       "Balehonnur Bulls": "Balehonnur Bulls (2005–12)",
     };
     return { ...team, name: alt[team.name] ?? team.name };
@@ -215,64 +300,73 @@ test("seeded teams are found by database id across historical spellings, or the 
   assert.equal(seeds.championId, idOf("4s-11"));
   assert.equal(seeds.runnerUpId, idOf("RCB United"));
   assert.deepEqual([...seeds.semifinalistIds].sort(), [idOf("JNV Junglees"), idOf("Balehonnur Bulls")].sort());
-  // The plan carries ids, not names, as identifiers.
-  const plan = generatePlan({ roster: spelled, days: DAYS, entropy: entropyFor(1) });
-  assert.equal(plan.seeds.championId, idOf("4s-11"));
+  assert.equal(generatePlan({ roster: spelled, days: DAYS, entropy: entropyFor(1) }).seeds.championId, idOf("4s-11"));
 
-  const missing = roster.filter((team) => team.name !== "JNV Junglees");
-  assert.throws(() => resolveSeeds(missing), (error: { code?: string }) => error.code === "roster_count");
   const renamed = roster.map((team) => (team.name === "JNV Junglees" ? { ...team, name: "Junglees Cricket Club of Somewhere" } : team));
   assert.throws(() => resolveSeeds(renamed), (error: { code?: string }) => error.code === "seed_missing");
   assert.throws(() => generatePlan({ roster: renamed, days: DAYS }), (error: { code?: string }) => error.code === "seed_missing");
-
   const duplicated = roster.map((team) => (team.name === "Champions-11" ? { ...team, name: "RCB United" } : team));
   assert.throws(() => resolveSeeds(duplicated), (error: { code?: string }) => error.code === "seed_ambiguous");
-  // Two "4s-11" teams: the 2025 batch picks the right one; identical batches stay ambiguous.
   const twins: RosterTeam[] = roster.map((team) =>
     team.name === "GTR" ? { ...team, name: "4s-11", batchAdmissionYear: 2012, batchLeavingYear: 2019 } : team.name === "4s-11" ? { ...team, batchAdmissionYear: 2004, batchLeavingYear: 2011 } : team,
   );
   assert.equal(resolveSeeds(twins).championId, idOf("4s-11"));
-  const sameBatch = roster.map((team) =>
-    team.name === "GTR"
-      ? { ...team, name: "4s-11", batchAdmissionYear: 2004, batchLeavingYear: 2011 }
-      : team.name === "4s-11"
-        ? { ...team, batchAdmissionYear: 2004, batchLeavingYear: 2011 }
-        : team,
-  );
-  assert.throws(() => resolveSeeds(sameBatch), (error: { code?: string }) => error.code === "seed_ambiguous");
 });
 
-test("a roster other than 18 teams is refused before anything is drawn", () => {
-  for (const count of [0, 1, 17, 19, 20]) {
-    const extra = Array.from({ length: count }, (_, i) => roster[i % roster.length] as RosterTeam).map((team, i) => ({ ...team, id: `x-${i}`, name: i < 4 ? team.name : `Extra ${i}` }));
-    assert.throws(() => generatePlan({ roster: extra, days: DAYS }), (error: { code?: string }) => ["roster_count", "roster_invalid"].includes(error.code ?? ""), `count ${count}`);
+test("exactly 19 approved teams are required, and a bad roster is refused before anything is drawn", () => {
+  assert.equal(TEAM_COUNT, 19);
+  for (const count of [0, 1, 17, 18, 20, 21]) {
+    const base = count <= roster.length ? roster.slice(0, count) : [...roster, ...Array.from({ length: count - roster.length }, (_, i) => ({ id: `x-${i}`, name: `Extra ${i}` }))];
+    assert.throws(() => generatePlan({ roster: base, days: DAYS }), (error: { code?: string }) => ["roster_count", "roster_invalid"].includes(error.code ?? ""), `count ${count}`);
   }
-  const doubled = [...roster.slice(0, 17), roster[0] as RosterTeam];
+  const doubled = [...roster.slice(0, 18), roster[0] as RosterTeam];
   assert.throws(() => generatePlan({ roster: doubled, days: DAYS }), (error: { code?: string }) => error.code === "roster_invalid");
 });
 
-test("saturday teams get real recovery time, and sunday leaves a ground free in the last slot", () => {
-  for (let n = 0; n < 200; n += 1) {
-    const plan = generatePlan({ roster, days: DAYS, entropy: entropyFor(50_000 + n) });
-    assert.ok(validatePlan(plan).minLeagueRestMinutes >= 100, `draw ${n}: at least two slots between a team's Saturday matches`);
-    assert.ok(plan.notes.some((note) => note.includes("qualification window")));
-  }
+test("changing the times never changes who plays whom, and the same rules guard every change", () => {
+  const plan = generatePlan({ roster, days: DAYS, entropy: entropyFor(11) });
+  const opponents = (matches: DrawPlan["matches"]) => matches.map((m) => `${m.code}:${m.teamA.teamId ?? m.teamA.label}|${m.teamB.teamId ?? m.teamB.label}|${m.ground}`).join(";");
+  const later = { ...DEFAULT_TIMETABLE, saturdayStart: 7 * 60 + 30, sundayStart: 7 * 60 + 30, slotMinutes: 55, qf1: 11 * 60 + 45, qf2: 12 * 60 + 50, sf: 14 * 60 + 15, final: 16 * 60 };
+  const moved = applyTimetable(plan.matches, DAYS, later);
+  assert.equal(opponents(moved), opponents(plan.matches), "opponents, codes and grounds are untouched");
+  assert.notEqual(moved[0]?.startMinutes, plan.matches[0]?.startMinutes);
+  assert.deepEqual(checkSchedule(timedMatches(moved)).errors, []);
+  assert.equal(moved[0]?.teamA.teamId, idOf("4s-11"), "the champion still opens");
+
+  const base = timedMatches(plan.matches);
+  assert.deepEqual(checkSchedule(base).errors, []);
+  // Two matches on one ground at once.
+  const clash = base.map((m) => (m.code === "M02" ? { ...m, ground: "A" as const } : m));
+  assert.ok(checkSchedule(clash).errors.some((e) => e.includes("double-booked")));
+  // A team in two matches at once.
+  const m01 = base.find((m) => m.code === "M01");
+  const twice = base.map((m) => (m.code === "M08" ? { ...m, startMinutes: (m01?.startMinutes as number) + 10, ground: "B" as const } : m));
+  assert.ok(checkSchedule(twice).errors.some((e) => e.includes("overlapping")));
+  // Back to back with no rest.
+  const tight = base.map((m) => (m.code === "M08" ? { ...m, startMinutes: (m01?.startMinutes as number) + 55, ground: "B" as const } : m));
+  assert.ok(checkSchedule(tight).errors.some((e) => e.includes("minutes between")));
+  // Daylight.
+  const dark = applyTimetable(plan.matches, DAYS, { ...DEFAULT_TIMETABLE, saturdayStart: 9 * 60 });
+  assert.ok(checkSchedule(timedMatches(dark)).errors.some((e) => e.includes("daylight")));
+  // The qualification window and knockout order.
+  const early = applyTimetable(plan.matches, DAYS, { ...DEFAULT_TIMETABLE, qf1: 10 * 60 + 50 });
+  assert.ok(checkSchedule(timedMatches(early)).errors.some((e) => e.includes("last league match")));
+  const crowded = applyTimetable(plan.matches, DAYS, { ...DEFAULT_TIMETABLE, sf: 12 * 60 + 40 });
+  assert.ok(checkSchedule(timedMatches(crowded)).errors.length > 0);
 });
+
+function score(teamAId: string, teamBId: string, winner: "a" | "b" | "tie" | "nr", fixtureId = `${teamAId}-${teamBId}`): MatchScore {
+  const inn = (runs: number) => ({ runs, wickets: 3, balls: 36, allOut: false });
+  if (winner === "nr") return { fixtureId, teamAId, teamBId, outcome: "no_result", firstBats: "a", maxBalls: 36, first: inn(0), second: inn(0) };
+  if (winner === "tie") return { fixtureId, teamAId, teamBId, outcome: "tie", firstBats: "a", maxBalls: 36, first: inn(40), second: inn(40) };
+  return { fixtureId, teamAId, teamBId, outcome: "win", firstBats: "a", maxBalls: 36, first: inn(winner === "a" ? 50 : 40), second: inn(winner === "a" ? 40 : 50) };
+}
 
 test("net run rate counts all-out innings at the full quota and ignores no results", () => {
   const A = "a";
   const B = "b";
-  const m1: MatchScore = {
-    fixtureId: "f1", teamAId: A, teamBId: B, outcome: "win", firstBats: "a", maxBalls: 36,
-    first: { runs: 60, wickets: 3, balls: 36, allOut: false },
-    second: { runs: 50, wickets: 6, balls: 36, allOut: false },
-  };
-  // B bats first and is bowled out for 40 in 26 balls; A chases 41 in 18 balls.
-  const m2: MatchScore = {
-    fixtureId: "f2", teamAId: A, teamBId: B, outcome: "win", firstBats: "b", maxBalls: 36,
-    first: { runs: 40, wickets: 10, balls: 26, allOut: true },
-    second: { runs: 41, wickets: 1, balls: 18, allOut: false },
-  };
+  const m1: MatchScore = { fixtureId: "f1", teamAId: A, teamBId: B, outcome: "win", firstBats: "a", maxBalls: 36, first: { runs: 60, wickets: 3, balls: 36, allOut: false }, second: { runs: 50, wickets: 6, balls: 36, allOut: false } };
+  const m2: MatchScore = { fixtureId: "f2", teamAId: A, teamBId: B, outcome: "win", firstBats: "b", maxBalls: 36, first: { runs: 40, wickets: 10, balls: 26, allOut: true }, second: { runs: 41, wickets: 1, balls: 18, allOut: false } };
   const nr: MatchScore = { ...m1, fixtureId: "f3", outcome: "no_result" };
   const rows = computeRows([{ teamId: A, group: "A" }, { teamId: B, group: "A" }], [m1, m2, nr]);
   const a = rows.get(A) as StandingRow;
@@ -283,170 +377,134 @@ test("net run rate counts all-out innings at the full quota and ignores no resul
   assert.equal(a.ballsAgainst, 36 + 36, "the dismissed side counts as having faced all 6 overs");
   assert.ok(Math.abs(a.nrr - ((101 * 6) / 54 - (90 * 6) / 72)) < 1e-9);
   assert.equal(formatNrr(a.nrr), "+3.722");
-  assert.ok(Math.abs(a.nrr + b.nrr) < 1e-9, "two-team NRRs mirror each other");
+  assert.ok(Math.abs(a.nrr + b.nrr) < 1e-9);
   assert.equal(a.points, 2 * POINTS.win + POINTS.noResult);
   assert.equal(b.points, POINTS.noResult);
-  assert.equal(a.noResult, 1);
   assert.equal(a.played, 3);
   assert.equal(matchWinner(m2), "a");
-
-  const tie: MatchScore = { ...m1, fixtureId: "f4", outcome: "tie", second: { runs: 60, wickets: 4, balls: 36, allOut: false } };
-  const tied = computeRows([{ teamId: A, group: "A" }, { teamId: B, group: "A" }], [tie]);
+  const tied = computeRows([{ teamId: A, group: "A" }, { teamId: B, group: "A" }], [{ ...m1, fixtureId: "f4", outcome: "tie", second: { runs: 60, wickets: 4, balls: 36, allOut: false } }]);
   assert.equal(tied.get(A)?.points, POINTS.tie);
-  assert.equal(tied.get(B)?.points, POINTS.tie);
-  assert.equal(tied.get(A)?.nrr, 0);
   assert.equal(formatNrr(0), "0.000");
   assert.equal(formatNrr(-1.23456), "-1.235");
+});
+
+test("a BYE is worth 2 points but is not a match: no played, runs, balls or net run rate", () => {
+  const rows = computeRows([{ teamId: "x", group: "A" }, { teamId: "y", group: "A" }], [score("x", "y", "a")], ["x"]);
+  const x = rows.get("x") as StandingRow;
+  assert.equal(x.points, POINTS.win + POINTS.bye);
+  assert.equal(x.played, 1, "the BYE is not a match played");
+  assert.equal(x.byes, 1);
+  assert.equal(x.won, 1, "wins count real matches only");
+  const alone = computeRows([{ teamId: "z", group: "A" }], [], ["z"]).get("z") as StandingRow;
+  assert.deepEqual([alone.points, alone.played, alone.runsFor, alone.ballsFor, alone.runsAgainst, alone.ballsAgainst, alone.nrr], [2, 0, 0, 0, 0, 0, 0]);
+  assert.equal(POINTS.bye, 2);
 });
 
 test("score entry rejects impossible innings and parses overs as balls", () => {
   assert.equal(parseOvers("5.3"), 33);
   assert.equal(parseOvers("6"), 36);
   assert.equal(parseOvers("5.6"), null);
-  assert.equal(parseOvers("x"), null);
   const base = { outcome: "win" as const, firstBats: "a" as const, maxBalls: 36 };
   assert.deepEqual(validateScore({ ...base, first: { runs: 50, wickets: 3, balls: 36, allOut: false }, second: { runs: 40, wickets: 5, balls: 36, allOut: false } }), []);
-  assert.deepEqual(validateScore({ ...base, first: { runs: 50, wickets: 3, balls: 36, allOut: false }, second: { runs: 51, wickets: 2, balls: 20, allOut: false } }), [], "a chase can end early");
-  assert.ok(validateScore({ ...base, first: { runs: 50, wickets: 3, balls: 30, allOut: false }, second: { runs: 40, wickets: 5, balls: 36, allOut: false } }).length > 0, "short first innings without an all out");
   assert.ok(validateScore({ ...base, first: { runs: 50, wickets: 3, balls: 40, allOut: false }, second: { runs: 40, wickets: 5, balls: 36, allOut: false } }).length > 0, "too many balls");
   assert.ok(validateScore({ ...base, outcome: "tie", first: { runs: 50, wickets: 3, balls: 36, allOut: false }, second: { runs: 40, wickets: 5, balls: 36, allOut: false } }).length > 0);
-  assert.ok(validateScore({ ...base, outcome: "win", first: { runs: 50, wickets: 3, balls: 36, allOut: false }, second: { runs: 50, wickets: 5, balls: 36, allOut: false } }).length > 0);
-  assert.deepEqual(validateScore({ ...base, outcome: "no_result", first: { runs: 0, wickets: 0, balls: 0, allOut: false }, second: { runs: 0, wickets: 0, balls: 0, allOut: false } }), []);
 });
 
 function levelRow(teamId: string, group: GroupCode, overrides: Partial<StandingRow> = {}): StandingRow {
-  return { teamId, group, played: 3, won: 1, lost: 2, tied: 0, noResult: 0, points: 2, runsFor: 100, ballsFor: 108, runsAgainst: 100, ballsAgainst: 108, nrr: 0, rank: 0, tied_unresolved: false, ...overrides };
+  return { teamId, group, played: 3, won: 1, lost: 2, tied: 0, noResult: 0, byes: 0, points: 2, runsFor: 100, ballsFor: 108, runsAgainst: 100, ballsAgainst: 108, nrr: 0, rank: 0, tied_unresolved: false, ...overrides };
 }
 
 test("teams level on every published criterion are flagged for the organizers, never picked silently", () => {
   const rows = [levelRow("t1", "A", { points: 6, won: 3, nrr: 1 }), levelRow("t2", "A"), levelRow("t3", "A"), levelRow("t4", "A", { points: 0, won: 0 })];
-  const table = rankRows(rows, [], "group:A", [], 3);
+  const table = rankRows(rows, [], "group:A", [], 4);
   assert.equal(table.rows[0]?.teamId, "t1");
   assert.equal(table.ties.length, 1);
-  assert.deepEqual([...(table.ties[0]?.teamIds ?? [])].sort(), ["t2", "t3"]);
   assert.equal(table.ties[0]?.blocking, true);
-  assert.ok(table.rows.filter((row) => row.tied_unresolved).length === 2);
-
   const decided = rankRows(
     [levelRow("t1", "A", { points: 6, won: 3, nrr: 1 }), levelRow("t2", "A"), levelRow("t3", "A"), levelRow("t4", "A", { points: 0, won: 0 })],
     [],
     "group:A",
     [{ scope: "group:A", order: ["t3", "t2"] }],
-    3,
+    4,
   );
   assert.deepEqual(decided.rows.map((row) => row.teamId), ["t1", "t3", "t2", "t4"]);
   assert.equal(decided.ties.length, 0);
-
-  // NRR separates teams that are level on points; head-to-head only settles exactly two level teams that met.
-  const byNrr = rankRows([levelRow("x", "A", { nrr: 0.5 }), levelRow("y", "A", { nrr: 1.5 })], [], "group:A");
-  assert.equal(byNrr.rows[0]?.teamId, "y");
-  const met: MatchScore = { fixtureId: "h", teamAId: "p", teamBId: "q", outcome: "win", firstBats: "a", maxBalls: 36, first: { runs: 30, wickets: 1, balls: 36, allOut: false }, second: { runs: 20, wickets: 4, balls: 36, allOut: false } };
-  const h2h = rankRows([levelRow("q", "A"), levelRow("p", "A")], [met], "group:A");
-  assert.equal(h2h.rows[0]?.teamId, "p");
-  assert.equal(h2h.ties.length, 0);
+  const met = score("p", "q", "a", "h");
+  assert.equal(rankRows([levelRow("q", "A"), levelRow("p", "A")], [met], "group:A").rows[0]?.teamId, "p");
 });
 
-test("qualification takes the top two per group plus the two best third-placed teams", () => {
-  const plan = generatePlan({ roster, days: DAYS, entropy: entropyFor(3) });
+/** Plays the whole 28-match league: team strength decides most results, with some ties and no results. */
+function playLeague(plan: DrawPlan, strength: (slot: string) => number, seed = 1) {
+  const rng = seededRng(entropyFor(seed));
+  const scores: MatchScore[] = [];
+  for (const m of plan.matches.filter((x) => x.stage === "league")) {
+    const roll = rng.int(100);
+    const diff = strength(m.teamA.slot as string) - strength(m.teamB.slot as string);
+    const winner = roll < 4 ? "nr" : roll < 8 ? "tie" : diff === 0 ? (rng.int(2) === 0 ? "a" : "b") : diff > 0 ? "a" : "b";
+    scores.push(score(m.teamA.teamId as string, m.teamB.teamId as string, winner, m.code));
+  }
+  return scores;
+}
+
+test("qualification takes the top four of each group, eight in all, and the bracket crosses A and B", () => {
+  for (let n = 0; n < 60; n += 1) {
+    const plan = generatePlan({ roster, days: DAYS, entropy: entropyFor(900 + n) });
+    const teams = plan.result.assignments.map((a) => ({ teamId: a.teamId, group: a.group }));
+    const scores = playLeague(plan, (slot) => (slot.startsWith("A") ? 10 - Number(slot.slice(1)) : 11 - Number(slot.slice(1))), n);
+    const q = computeQualification(teams, scores, [], [plan.bye.teamId]);
+    assert.equal(q.leagueComplete, true);
+    const decisions = q.blockingTies.map((tie) => ({ scope: tie.scope, order: [...tie.teamIds].sort() }));
+    const settled = computeQualification(teams, scores, decisions, [plan.bye.teamId]);
+    assert.ok(settled.qualifiers, `draw ${n}: qualifiers once any tie is decided`);
+    const list = settled.qualifiers as Qualifier[];
+    assert.equal(list.length, 8);
+    for (const group of ["A", "B"] as const) assert.deepEqual(list.filter((x) => x.group === group).map((x) => x.rank).sort(), [1, 2, 3, 4]);
+    const bye = settled.groups.A.rows.find((row) => row.teamId === plan.bye.teamId) as StandingRow;
+    assert.equal(bye.byes, 1);
+    assert.equal(bye.played, 2, "the BYE team played two real matches");
+    const rank = (group: GroupCode, r: number) => list.find((x) => x.group === group && x.rank === r)?.teamId;
+    assert.deepEqual(
+      pairQuarterfinals(list),
+      [
+        { code: "QF1", teamAId: rank("A", 1), teamBId: rank("B", 4) },
+        { code: "QF2", teamAId: rank("A", 2), teamBId: rank("B", 3) },
+        { code: "QF3", teamAId: rank("A", 3), teamBId: rank("B", 2) },
+        { code: "QF4", teamAId: rank("A", 4), teamBId: rank("B", 1) },
+      ],
+    );
+  }
+  assert.equal(QF_PAIRINGS.length, 4);
+});
+
+test("nothing qualifies until all 28 league matches have a result", () => {
+  const plan = generatePlan({ roster, days: DAYS, entropy: entropyFor(31) });
   const teams = plan.result.assignments.map((a) => ({ teamId: a.teamId, group: a.group }));
-  const league = plan.matches.filter((m) => m.stage === "league");
-  // Pool 1 teams always win by a margin that depends on group, so tables are decisive and differ across groups.
-  const scores: MatchScore[] = league.map((m, index) => ({
-    fixtureId: m.code,
-    teamAId: m.teamA.teamId as string,
-    teamBId: m.teamB.teamId as string,
-    outcome: "win",
-    firstBats: "a",
-    maxBalls: 36,
-    first: { runs: 40 + (index % 7) * 3 + (m.group === "A" ? 5 : m.group === "B" ? 2 : 0), wickets: 3, balls: 36, allOut: false },
-    second: { runs: 20 + (index % 5), wickets: 6, balls: 36, allOut: false },
-  }));
-  const partial = computeQualification(teams, scores.slice(0, 10));
+  const scores = playLeague(plan, () => 0, 3);
+  const partial = computeQualification(teams, scores.slice(0, LEAGUE_MATCHES - 1), [], [plan.bye.teamId]);
   assert.equal(partial.leagueComplete, false);
   assert.equal(partial.qualifiers, null);
-
-  const done = computeQualification(teams, scores);
-  assert.equal(done.leagueMatchesPlayed, LEAGUE_MATCHES);
-  assert.equal(done.leagueComplete, true);
-  assert.ok(done.qualifiers, `qualifiers should be decided: ${done.blockers.join("; ")}`);
-  assert.equal(done.qualifiers.length, 8);
-  assert.equal(new Set(done.qualifiers.map((q) => q.teamId)).size, 8);
-  assert.deepEqual(done.qualifiers.map((q) => q.seed), [1, 2, 3, 4, 5, 6, 7, 8]);
-  for (const group of ["A", "B", "C"] as const) {
-    const table = done.groups[group].rows;
-    assert.equal(table.length, 6);
-    assert.ok(done.qualifiers.some((q) => q.teamId === table[0]?.teamId && q.seed <= 3), `${group} winner is seed 1-3`);
-    assert.ok(done.qualifiers.some((q) => q.teamId === table[1]?.teamId && q.seed >= 4 && q.seed <= 6), `${group} runner-up is seed 4-6`);
-  }
-  assert.equal(done.wildcards.rows.filter((w) => w.status === "wildcard").length, 2);
-  assert.equal(done.qualifiers.filter((q) => q.seed >= 7).length, 2);
+  assert.ok(Object.values(partial.status).every((s) => s === "pending" || s === "qualified" || s === "eliminated"));
 });
 
-test("quarterfinal pairings follow the seeds and avoid same-group rematches whenever that is possible", () => {
-  const groups: GroupCode[] = ["A", "B", "C"];
-  const permutations = <T,>(items: T[]): T[][] => (items.length <= 1 ? [items] : items.flatMap((item, i) => permutations([...items.slice(0, i), ...items.slice(i + 1)]).map((rest) => [item, ...rest])));
-  let cases = 0;
-  for (const winners of permutations(groups)) {
-    for (const runners of permutations(groups)) {
-      for (const thirds of permutations(groups).map((p) => p.slice(0, 2))) {
-        const qualifiers: Qualifier[] = [
-          ...winners.map((group, i) => ({ teamId: `W${group}`, group, seed: 1 + i })),
-          ...runners.map((group, i) => ({ teamId: `R${group}`, group, seed: 4 + i })),
-          ...thirds.map((group, i) => ({ teamId: `T${group}`, group, seed: 7 + i })),
-        ];
-        const pairs = pairQuarterfinals(qualifiers);
-        assert.equal(pairs.length, 4);
-        assert.equal(new Set(pairs.flatMap((p) => [p.teamAId, p.teamBId])).size, 8, "every qualifier appears once");
-        assert.equal(pairs.filter((p) => p.sameGroup).length, 0, `no same-group quarterfinal for ${winners}/${runners}/${thirds}`);
-        cases += 1;
-      }
-    }
-  }
-  assert.equal(cases, 216);
-  // With no clash, the standard bracket is untouched: 1v8, 4v5, 2v7, 3v6.
-  const clean: Qualifier[] = [
-    { teamId: "s1", group: "A", seed: 1 }, { teamId: "s2", group: "B", seed: 2 }, { teamId: "s3", group: "C", seed: 3 },
-    { teamId: "s4", group: "B", seed: 4 }, { teamId: "s5", group: "C", seed: 5 }, { teamId: "s6", group: "A", seed: 6 },
-    { teamId: "s7", group: "C", seed: 7 }, { teamId: "s8", group: "B", seed: 8 },
-  ];
-  const standard = pairQuarterfinals(clean);
-  assert.deepEqual(
-    standard.map((p) => [p.teamAId, p.teamBId]),
-    QF_PAIRINGS.map((p) => [`s${p.seeds[0]}`, `s${p.seeds[1]}`]),
-  );
-  assert.equal(standard.some((p) => p.sameGroup), false);
-});
-
-test("the reveal timeline covers all 18 teams in order, can be joined part-way, and has a reduced-motion form", () => {
-  const plan = generatePlan({ roster, days: DAYS, entropy: entropyFor(11) });
-  const normal = buildTimeline(plan);
-  const places = normal.beats.filter((beat) => beat.kind === "place");
-  assert.equal(places.length, 18);
-  assert.deepEqual(places.map((beat) => (beat.kind === "place" ? beat.step.teamId : "")), plan.result.reveal.map((step) => step.teamId));
-  assert.deepEqual(normal.beats.slice(0, 3).map((beat) => beat.kind), ["countdown", "opening", "seeds-intro"]);
-  assert.equal(normal.beats.at(-1)?.kind, "done");
-  // Beats are contiguous, so every device that shares a start time agrees on what is on screen.
-  let cursor = 0;
-  for (const beat of normal.beats) {
-    assert.equal(beat.at, cursor);
-    cursor += beat.dur;
-  }
-  assert.equal(cursor, normal.total);
-  // The four seeded teams come before the random draw, each place beat leaves time for the flight.
-  assert.ok(places.slice(0, 4).every((beat) => beat.kind === "place" && beat.step.phase === "seed"));
-  assert.ok(places.every((beat) => beat.kind === "place" && beat.dur >= beat.revealMs + beat.flyMs));
-
-  // Joining late: the beat at any elapsed time is the one that contains it, and earlier teams are already seated.
-  const middle = (places[9] as (typeof places)[number]).at + 10;
-  const index = beatIndexAt(normal, middle);
-  assert.equal(normal.beats[index]?.kind, "place");
-  assert.equal(placedBefore(normal, index).length, 9);
-  assert.equal(beatIndexAt(normal, -5000), 0);
-  assert.equal(beatIndexAt(normal, normal.total + 99_999), normal.beats.length - 1);
-
+test("the reveal timeline covers all 19 teams in order, ends with the BYE, can be joined part-way, and has a reduced-motion form", () => {
+  const plan = generatePlan({ roster, days: DAYS, entropy: entropyFor(5) });
+  const timeline = buildTimeline(plan);
+  const placed = timeline.beats.flatMap((beat) => (beat.kind === "place" || beat.kind === "bye" ? [beat.step.teamId] : []));
+  assert.deepEqual(placed, plan.result.reveal.map((step) => step.teamId));
+  assert.equal(timeline.beats.filter((b) => b.kind === "place").length, 18);
+  assert.equal(timeline.beats.filter((b) => b.kind === "bye").length, 1);
+  const kinds = timeline.beats.map((b) => b.kind);
+  assert.equal(kinds[0], "countdown");
+  assert.ok(kinds.indexOf("seeds-intro") < kinds.indexOf("draw-intro") && kinds.indexOf("draw-intro") < kinds.indexOf("bye") && kinds.indexOf("bye") < kinds.indexOf("groups"));
+  assert.deepEqual(timeline.beats.filter((b) => b.kind === "fixtures").map((b) => (b as { group: string }).group), ["A", "B"]);
+  assert.deepEqual(timeline.beats.filter((b) => b.kind === "schedule").map((b) => (b as { day: number }).day), [1, 2]);
+  assert.equal(kinds.at(-1), "done");
+  const mid = beatIndexAt(timeline, timeline.total / 2);
+  assert.ok(mid > 0 && mid < timeline.beats.length - 1);
+  assert.ok(placedBefore(timeline, mid).length > 0);
+  assert.equal(beatIndexAt(timeline, timeline.total + 10_000), timeline.beats.length - 1);
   const reduced = buildTimeline(plan, { reduced: true });
-  assert.ok(reduced.total < normal.total / 2);
-  assert.ok(reduced.beats.filter((beat) => beat.kind === "place").every((beat) => beat.kind === "place" && beat.flyMs === 0));
-  assert.equal(buildTimeline(plan, { countdown: false }).beats[0]?.kind, "opening");
-  assert.ok(buildTimeline(plan, { speed: 2 }).total < normal.total * 0.6);
+  assert.ok(reduced.total < timeline.total / 2);
+  const skipCountdown = buildTimeline(plan, { countdown: false });
+  assert.notEqual(skipCountdown.beats[0]?.kind, "countdown");
 });

@@ -5,7 +5,7 @@ import { clearReadCache } from "../../lib/read-cache";
 import { slugify } from "../../lib/format";
 import type { Actor } from "../../lib/types";
 
-/** The 18 approved NCL 2026 teams as the roster might spell them, including the four seeded 2025 teams. */
+/** The 19 approved NCL 2026 teams as the roster might spell them, including the four seeded 2025 teams. */
 export const TEAM_NAMES = [
   "4s-11",
   "RCB United",
@@ -25,6 +25,7 @@ export const TEAM_NAMES = [
   "Tunga Titans",
   "Bhadra Blasters",
   "Hemavathi Hawks",
+  "Spartans XI",
 ];
 
 export async function freshDb(): Promise<Db> {

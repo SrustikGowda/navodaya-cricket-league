@@ -1,43 +1,137 @@
 // Tournament constants for the NCL 2026 group draw. Client-safe.
+//
+// 19 teams, two groups, one BYE. The opponent pattern and the order of matches are the ones NCL 2025 used, kept
+// as fixed templates: only which team sits in which position is random.
 
-export const ALGORITHM = "ncl-2026-draw-v1";
+export const ALGORITHM = "ncl-2026-draw-v2";
 
-export const TEAM_COUNT = 18;
-export const GROUP_SIZE = 6;
-export const POOL_SIZE = 3;
-export const LEAGUE_MATCHES = 27;
-export const TOTAL_MATCHES = 34;
+export const TEAM_COUNT = 19;
+export const GROUP_CODES = ["A", "B"] as const;
+export type GroupKey = (typeof GROUP_CODES)[number];
+
+/** Real teams in each group. Group A also has one BYE, which is not a team. */
+export const GROUP_TEAMS: Record<GroupKey, number> = { A: 9, B: 10 };
+export const BYE_POSITION = "A9";
+export const BYE_CODE = "BYE";
+
+export const LEAGUE_MATCHES = 28;
+export const LEAGUE_MATCHES_BY_GROUP: Record<GroupKey, number> = { A: 13, B: 15 };
+export const KNOCKOUT_MATCHES = 7;
+/** Real cricket matches: 28 league and 7 knockouts. */
+export const ACTUAL_MATCHES = 35;
+/** Fixture entries, counting the BYE. */
+export const FIXTURE_ENTRIES = 36;
+export const QUALIFIERS_PER_GROUP = 4;
 
 export const OVERS = { league: 6, quarterfinal: 6, semifinal: 8, final: 8 } as const;
 
+/**
+ * Who plays whom. Each position lists its three league opponents. "BYE" is the walkover: it is a fixture entry
+ * for that team, not a match, and takes no ground or time. Every pairing appears under both of its teams.
+ */
+export const OPPONENT_TEMPLATE: Record<GroupKey, Record<string, readonly string[]>> = {
+  A: {
+    A1: ["A2", "A5", "A6"],
+    A2: ["A1", "A3", "A7"],
+    A3: ["A2", "A4", "A8"],
+    A4: ["A3", "A5", "A9"],
+    A5: ["A1", "A4", "A6"],
+    A6: ["A1", "A5", "A7"],
+    A7: ["A2", "A6", "A8"],
+    A8: ["A3", "A7", "A9"],
+    A9: ["A4", "A8", "BYE"],
+  },
+  B: {
+    B1: ["B2", "B6", "B10"],
+    B2: ["B1", "B3", "B7"],
+    B3: ["B2", "B4", "B8"],
+    B4: ["B3", "B5", "B9"],
+    B5: ["B4", "B6", "B10"],
+    B6: ["B1", "B5", "B7"],
+    B7: ["B2", "B6", "B8"],
+    B8: ["B3", "B7", "B9"],
+    B9: ["B4", "B8", "B10"],
+    B10: ["B1", "B5", "B9"],
+  },
+};
+
+export type SlotPair = readonly [string, string];
+/** One time slot: the match on Ground A and the match on Ground B. */
+export type SlotRow = readonly [SlotPair, SlotPair];
+
+/** Saturday, in the order NCL 2025 played it. The inauguration break comes after the fifth slot. */
+export const SATURDAY_TEMPLATE: readonly SlotRow[] = [
+  [["A1", "A2"], ["B3", "B8"]],
+  [["A6", "A7"], ["B4", "B9"]],
+  [["B2", "B7"], ["B10", "B1"]],
+  [["A3", "A4"], ["A1", "A6"]],
+  [["B4", "B5"], ["B1", "B6"]],
+  [["A3", "A8"], ["B9", "B10"]],
+  [["B3", "B4"], ["A4", "A9"]],
+  [["A5", "A6"], ["A2", "A7"]],
+  [["B8", "B9"], ["B6", "B7"]],
+  [["B2", "B3"], ["A8", "A9"]],
+];
+
+export const SUNDAY_TEMPLATE: readonly SlotRow[] = [
+  [["B5", "B10"], ["A4", "A5"]],
+  [["A2", "A3"], ["B7", "B8"]],
+  [["B5", "B6"], ["B1", "B2"]],
+  [["A7", "A8"], ["A1", "A5"]],
+];
+
 /** Minutes from midnight IST. */
-const hm = (hours: number, minutes: number) => hours * 60 + minutes;
+export const hm = (hours: number, minutes: number) => hours * 60 + minutes;
 
-export const LEAGUE_SLOT_MINUTES = 50;
-export const LEAGUE_DURATION_MINUTES = 50;
+/**
+ * Times and lengths an organizer can change. Opponents never depend on any of this.
+ * Defaults are NCL 2025's league timings and the proposed 2026 knockout timings.
+ */
+export type Timetable = {
+  saturdayStart: number;
+  sundayStart: number;
+  /** Minutes from the start of one league slot to the start of the next. */
+  slotMinutes: number;
+  /** How long a league match is booked for. */
+  leagueMinutes: number;
+  /** Saturday's inauguration break comes after this many league slots, and lasts this long. */
+  breakAfterSlots: number;
+  breakMinutes: number;
+  quarterfinalMinutes: number;
+  semifinalMinutes: number;
+  finalMinutes: number;
+  /** Start times on Sunday: the first pair of quarterfinals, the second pair, both semifinals, and the final. */
+  qf1: number;
+  qf2: number;
+  sf: number;
+  final: number;
+};
 
-export const SATURDAY_SLOTS = [hm(7, 30), hm(8, 20), hm(9, 10), hm(10, 0), hm(10, 50), hm(11, 40), hm(12, 30), hm(13, 20), hm(14, 10)] as const;
-export const SUNDAY_LEAGUE_SLOTS = [hm(7, 0), hm(7, 50), hm(8, 40), hm(9, 30), hm(10, 20)] as const;
+export const DEFAULT_TIMETABLE: Timetable = {
+  saturdayStart: hm(7, 0),
+  sundayStart: hm(7, 0),
+  slotMinutes: 55,
+  leagueMinutes: 55,
+  breakAfterSlots: 5,
+  breakMinutes: 55,
+  quarterfinalMinutes: 55,
+  semifinalMinutes: 75,
+  finalMinutes: 75,
+  qf1: hm(11, 15),
+  qf2: hm(12, 20),
+  sf: hm(13, 45),
+  final: hm(15, 30),
+};
 
-export const KNOCKOUT_TIMES = {
-  QF1: hm(11, 45),
-  QF2: hm(11, 45),
-  QF3: hm(12, 45),
-  QF4: hm(12, 45),
-  SF1: hm(14, 0),
-  SF2: hm(14, 0),
-  F: hm(15, 35),
-} as const;
-
-/** Durations are chosen so ground bookings never overlap and each team keeps a recovery gap. */
-export const KNOCKOUT_DURATION_MINUTES = { quarterfinal: 55, semifinal: 70, final: 75 } as const;
-
-/** League: a team may not play in back-to-back slots, so it always gets at least one slot of rest. */
-export const MIN_LEAGUE_REST_MINUTES = LEAGUE_SLOT_MINUTES;
+/** A team may not play back to back in the league: there is always at least one slot of rest. */
+export const MIN_LEAGUE_REST_MINUTES = 55;
 /** Knockout recovery floor between a team's matches. */
-export const MIN_KNOCKOUT_REST_MINUTES = 15;
-/** Time between the last league match ending and the first quarterfinal, for standings and qualification. */
+export const MIN_KNOCKOUT_REST_MINUTES = 30;
+/** Time between the last league match ending and the first quarterfinal, for standings and confirmation. */
 export const MIN_QUALIFICATION_WINDOW_MINUTES = 30;
+/** Play must start after this and finish before this, so every match is finished in daylight. */
+export const EARLIEST_START_MINUTES = hm(6, 30);
+export const DAYLIGHT_END_MINUTES = hm(17, 45);
 
 export const GROUND_NAMES = { A: "Ground A", B: "Ground B" } as const;
 
@@ -45,11 +139,11 @@ export const DEFENDING_CHAMPION_LABEL = "Defending champion (NCL 2025)";
 
 export const REVEAL_LEAD_MS = 4_000;
 
-/** Points table. Tie and no result are worth one point to each side. */
-export const POINTS = { win: 2, tie: 1, noResult: 1, loss: 0 } as const;
+/** Points table. Tie and no result are worth one point to each side; the BYE is a walkover worth a win. */
+export const POINTS = { win: 2, tie: 1, noResult: 1, loss: 0, bye: 2 } as const;
 
 export const TIE_BREAKERS = [
-  "Points (win 2, tie or no result 1 each, loss 0)",
+  "Points (win 2, tie or no result 1 each, loss 0, BYE 2)",
   "Net run rate, using all-out innings at the full overs quota",
   "Most wins",
   "Result of the match between the two teams, if exactly two are level and they met",
@@ -57,11 +151,19 @@ export const TIE_BREAKERS = [
 ] as const;
 
 export const QUALIFICATION_RULES = [
-  "Top 2 of each group qualify directly (6 teams).",
-  "The 3 third-placed teams are ranked by points, then net run rate. The best 2 qualify as wildcards.",
-  "Quarterfinal seeds: 1-3 group winners, 4-6 runners-up, 7-8 wildcards, each band ranked by points then net run rate.",
-  "Quarterfinals pair seed 1 v 8, 4 v 5, 2 v 7 and 3 v 6. If a pairing would put two teams from the same group together, the lower seeds are swapped by the smallest change that avoids it.",
+  "The top 4 teams of each group qualify for the quarterfinals: 8 teams. There are no wildcards.",
+  "Quarterfinals: Group A #1 v Group B #4, Group A #2 v Group B #3, Group A #3 v Group B #2, Group A #4 v Group B #1.",
+  "Semifinals: winner QF1 v winner QF2, and winner QF3 v winner QF4. The final is between the semifinal winners.",
+  "The quarterfinals are filled only after an organizer confirms the final group standings.",
 ] as const;
+
+export const BYE_RULES = [
+  "One team in Group A has a BYE in place of its third league match. It is a walkover: the team gets 2 points.",
+  "A BYE is not a match. It has no runs, wickets, overs or net run rate, and does not count as a match played.",
+] as const;
+
+export const KNOCKOUT_TIE_RULE =
+  "A tied knockout match is never given a winner by the site. The organizers decide it under the tie-break announced for the day, for example a Super Over, and record the winner with a note.";
 
 /** Who is seeded from NCL 2025, and the spellings the roster or archive may use for each. */
 export type SeedKey = "champion" | "runner_up" | "semifinalist_1" | "semifinalist_2";

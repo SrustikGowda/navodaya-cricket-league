@@ -7,12 +7,12 @@ import { rateLimit } from "../rate-limit";
 import { bool, num, requiredStr, str, type Row } from "../rows";
 import { getActiveSeason, lockActiveSeason, type Season } from "../season";
 import type { Actor } from "../types";
-import { ALGORITHM, GROUND_NAMES, REVEAL_LEAD_MS } from "./config";
+import { ALGORITHM, BYE_CODE, DEFAULT_TIMETABLE, GROUND_NAMES, REVEAL_LEAD_MS, type Timetable } from "./config";
 import { syncEditionHistory } from "./history";
 import { generatePlan, planHash } from "./plan";
 import { resolveSeeds, type RosterTeam } from "./seeds";
 import { computeQualification, oversText, type MatchScore, type OrganizerDecision, type Qualification } from "./standings";
-import type { DrawPlan, GroupCode, LiveFixture, OfficialDrawView, PublicTeam } from "./types";
+import { GROUP_CODES, type DrawPlan, type GroupCode, type LiveFixture, type OfficialDrawView, type PublicTeam } from "./types";
 
 export const RESET_PHRASE = "DELETE NCL 2026 DRAW";
 const PASSWORD_ENV = "NCL_FIXTURE_RUN_PASSWORD";
@@ -166,7 +166,20 @@ function mapOfficial(row: Row): OfficialDrawView {
     publishedByLabel: str(row, "display_name") ?? "NCL organizers",
     plan,
     scheduleVersionId: requiredStr(row, "schedule_version_id"),
+    timetable: parseTimetable(row.timetable) ?? plan.timetable ?? DEFAULT_TIMETABLE,
+    standingsConfirmedAt: str(row, "standings_confirmed_at"),
   };
+}
+
+export function parseTimetable(raw: unknown): Timetable | null {
+  const value = typeof raw === "string" ? (JSON.parse(raw) as Record<string, unknown>) : (raw as Record<string, unknown> | null);
+  if (!value || typeof value !== "object") return null;
+  const out = { ...DEFAULT_TIMETABLE } as Record<string, number>;
+  for (const key of Object.keys(DEFAULT_TIMETABLE)) {
+    const item = Number((value as Record<string, unknown>)[key]);
+    if (Number.isFinite(item)) out[key] = item;
+  }
+  return out as unknown as Timetable;
 }
 
 export async function getOfficialDraw(db: Queryable): Promise<OfficialDrawView | null> {
@@ -230,6 +243,8 @@ export async function liveFixtures(db: Queryable, drawId: string): Promise<LiveF
       summary: str(row, "summary"),
       scoreA: scored ? innings(row, aFirst ? "first" : "second") : null,
       scoreB: scored ? innings(row, aFirst ? "second" : "first") : null,
+      isBye: bool(row, "is_bye"),
+      changeNote: str(row, "change_note"),
     };
   });
 }
@@ -267,7 +282,7 @@ export async function loadDecisions(db: Queryable, drawId: string): Promise<Orga
 
 export function qualificationFor(plan: DrawPlan, scores: MatchScore[], decisions: OrganizerDecision[]): Qualification {
   const teams = plan.result.assignments.map((a) => ({ teamId: a.teamId, group: a.group }));
-  return computeQualification(teams, scores, decisions);
+  return computeQualification(teams, scores, decisions, [plan.result.byeTeamId]);
 }
 
 export async function loadQualification(db: Queryable, official: OfficialDrawView): Promise<Qualification> {
@@ -331,9 +346,9 @@ export async function runOfficialDraw(
       const publishedAt = new Date();
       const revealAt = new Date(publishedAt.getTime() + REVEAL_LEAD_MS);
       await query.query(
-        `insert into draws (id, season_id, ref, status, algorithm, entropy, plan, plan_hash, request_id, published_by, published_at, reveal_at)
-         values ($1,$2,$3,'published',$4,$5,$6::jsonb,$7,$8,$9,$10,$11)`,
-        [drawId, season.id, ref, ALGORITHM, plan.seed, JSON.stringify(plan), planHash(plan), requestId, actor.id, publishedAt.toISOString(), revealAt.toISOString()],
+        `insert into draws (id, season_id, ref, status, algorithm, entropy, plan, plan_hash, request_id, published_by, published_at, reveal_at, timetable)
+         values ($1,$2,$3,'published',$4,$5,$6::jsonb,$7,$8,$9,$10,$11,$12::jsonb)`,
+        [drawId, season.id, ref, ALGORITHM, plan.seed, JSON.stringify(plan), planHash(plan), requestId, actor.id, publishedAt.toISOString(), revealAt.toISOString(), JSON.stringify(plan.timetable)],
       );
 
       const groundIds = new Map<string, string>();
@@ -347,7 +362,7 @@ export async function runOfficialDraw(
       }
 
       const groupIds = new Map<GroupCode, string>();
-      for (const code of ["A", "B", "C"] as const) {
+      for (const code of GROUP_CODES) {
         const name = `Group ${code}`;
         const found = await query.query<{ id: string }>("select id from groups where season_id = $1 and name = $2 for update", [season.id, name]);
         if (found[0]) {
@@ -364,10 +379,7 @@ export async function runOfficialDraw(
         }
       }
       for (const a of plan.result.assignments) {
-        await query.execute(
-          `insert into group_memberships (group_id, registration_id, sub_pool, slot, seeded_as) values ($1,$2,$3,$4,$5)`,
-          [groupIds.get(a.group), a.teamId, a.subPool, a.slot, a.seed],
-        );
+        await query.execute(`insert into group_memberships (group_id, registration_id, slot, seeded_as) values ($1,$2,$3,$4)`, [groupIds.get(a.group), a.teamId, a.slot, a.seed]);
       }
 
       const version = await query.query<{ id: string }>(
@@ -378,6 +390,25 @@ export async function runOfficialDraw(
       const versionId = (version[0] as { id: string }).id;
 
       const fixtureIds = new Map<string, string>();
+      // The BYE is a fixture entry for one team: completed on the spot, no ground, time or score.
+      const byeRows = await query.query<{ id: string }>(
+        `insert into fixtures (
+           season_id, schedule_version_id, match_number, stage, team_a_registration_id, team_a_label, team_b_label,
+           status, code, group_id, draw_id, sort_order, is_bye, winner_registration_id, winner_label, summary
+         ) values ($1,$2,$3,'league',$4,$5,'BYE','completed',$6,$7,$8,$3,true,$4,$5,$9) returning id`,
+        [
+          season.id,
+          versionId,
+          plan.bye.number,
+          plan.bye.teamId,
+          plan.bye.label,
+          BYE_CODE,
+          groupIds.get("A"),
+          drawId,
+          `BYE. ${plan.bye.label} are given a walkover and 2 points. It is not a match.`,
+        ],
+      );
+      fixtureIds.set(BYE_CODE, (byeRows[0] as { id: string }).id);
       for (const match of plan.matches) {
         const rows = await query.query<{ id: string }>(
           `insert into fixtures (
@@ -421,6 +452,7 @@ export async function runOfficialDraw(
         ref,
         planHash: planHash(plan),
         matches: plan.matches.length,
+        byeTeam: plan.bye.label,
         teams: plan.roster.length,
       });
       await input.hooks?.beforeCommit?.();

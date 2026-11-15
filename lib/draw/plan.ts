@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { DomainError } from "../errors";
-import { ALGORITHM } from "./config";
+import { ALGORITHM, DEFAULT_TIMETABLE, type Timetable } from "./config";
 import { drawGroups } from "./draw";
 import { newEntropy, seededRng } from "./rng";
 import { buildSchedule } from "./schedule";
@@ -15,11 +15,13 @@ export type PlanInput = {
   entropy?: string;
   /** Pre-resolved seeded teams. Omit to resolve them from the roster. */
   seeds?: ResolvedSeeds;
+  /** Times for the two days. Omit for NCL 2025's league times and the proposed 2026 knockout times. */
+  timetable?: Timetable;
 };
 
 /**
- * Runs the whole draw: seeded group allocation, 27 league fixtures, the two-day schedule and the knockout
- * placeholders. The plan is validated before it is returned, so an invalid plan can never be saved or shown.
+ * Runs the whole draw: the seeded allocation of 19 teams into two groups, the 28 league matches in the 2025 order,
+ * the BYE, and the knockout placeholders. The plan is validated before it is returned, so an invalid plan can never be saved or shown.
  */
 export function generatePlan(input: PlanInput): DrawPlan {
   assertRoster(input.roster);
@@ -28,9 +30,10 @@ export function generatePlan(input: PlanInput): DrawPlan {
   const roster = [...input.roster].sort((a, b) => a.id.localeCompare(b.id)).map((team) => ({ id: team.id, name: team.name }));
   const names = new Map(roster.map((team) => [team.id, team.name]));
   const rng = seededRng(entropy);
+  const timetable = input.timetable ?? DEFAULT_TIMETABLE;
 
   const result = drawGroups(roster, seeds, rng);
-  const matches = buildSchedule(result, names, rng, { days: input.days });
+  const { matches, bye } = buildSchedule(result, names, { days: input.days, timetable });
 
   const plan: DrawPlan = {
     algorithm: ALGORITHM,
@@ -39,6 +42,8 @@ export function generatePlan(input: PlanInput): DrawPlan {
     seeds,
     result,
     matches,
+    bye,
+    timetable,
     notes: [],
   };
   const report = validatePlan(plan);
@@ -51,7 +56,7 @@ export function generatePlan(input: PlanInput): DrawPlan {
 
 /** Re-runs the algorithm from the stored entropy and roster and reports whether it matches the stored plan. */
 export function verifyPlan(plan: DrawPlan, days: [string, string]): { ok: boolean; hash: string; replayHash: string } {
-  const replay = generatePlan({ roster: plan.roster, days, entropy: plan.seed, seeds: plan.seeds });
+  const replay = generatePlan({ roster: plan.roster, days, entropy: plan.seed, seeds: plan.seeds, timetable: plan.timetable });
   const hash = planHash(plan);
   const replayHash = planHash(replay);
   return { ok: hash === replayHash, hash, replayHash };
@@ -77,6 +82,8 @@ export function planHash(plan: DrawPlan): string {
     seeds: plan.seeds,
     result: plan.result,
     matches: plan.matches,
+    bye: plan.bye,
+    timetable: plan.timetable,
   });
   return createHash("sha256").update(canonical).digest("hex");
 }

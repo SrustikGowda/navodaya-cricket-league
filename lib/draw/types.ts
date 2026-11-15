@@ -1,39 +1,40 @@
 // Shared, client-safe types for the NCL 2026 group draw. Nothing in this file may import node-only modules.
 
-export type GroupCode = "A" | "B" | "C";
-export type SubPool = 1 | 2;
+import type { Timetable } from "./config";
+
+export type GroupCode = "A" | "B";
 export type SeedRole = "champion" | "runner_up" | "semifinalist";
 export type Stage = "league" | "quarterfinal" | "semifinal" | "final";
 export type GroundCode = "A" | "B";
 
-export const GROUP_CODES: readonly GroupCode[] = ["A", "B", "C"];
-export const SUB_POOLS: readonly SubPool[] = [1, 2];
+export const GROUP_CODES: readonly GroupCode[] = ["A", "B"];
 
 export type TeamRef = { id: string; name: string };
 
-/** One of the 18 positions (A1..A6, B1..B6, C1..C6). Slots 1-3 are sub-pool 1, slots 4-6 are sub-pool 2. */
+/** One of the 19 positions: A1..A9 and B1..B10. A9 is the position that carries the BYE. */
 export type SlotAssignment = {
   group: GroupCode;
   slot: number;
-  subPool: SubPool;
   teamId: string;
   seed: SeedRole | null;
 };
 
 export type RevealStep = {
-  /** 1-based position in the reveal sequence. The four seeded teams come first. */
+  /** 1-based position in the reveal sequence. The four seeded teams come first, the BYE team last. */
   order: number;
-  phase: "seed" | "draw";
+  phase: "seed" | "draw" | "bye";
   teamId: string;
   group: GroupCode;
   slot: number;
-  subPool: SubPool;
   seed: SeedRole | null;
 };
 
 export type DrawResult = {
   assignments: SlotAssignment[];
   reveal: RevealStep[];
+  /** The one team whose third league fixture is a BYE (position A9). */
+  byeTeamId: string;
+  /** The champion's opening opponent: whoever holds A2. */
   openingOpponentId: string;
 };
 
@@ -43,12 +44,12 @@ export type MatchSide = {
   slot: string | null;
   /** The team name, or the qualification placeholder until the team is known. */
   label: string;
-  /** Machine-readable placeholder, for example "seed:8" or "winner:QF1". Null once a real team is known. */
+  /** Machine-readable placeholder, for example "rank:A:1" or "winner:QF1". Null once a real team is known. */
   placeholder: string | null;
 };
 
 export type PlannedMatch = {
-  /** Stable identifier inside a schedule: M01..M27, QF1..QF4, SF1, SF2, F. */
+  /** Stable identifier inside a schedule: M01..M28, QF1..QF4, SF1, SF2, F. */
   code: string;
   number: number;
   stage: Stage;
@@ -66,6 +67,16 @@ export type PlannedMatch = {
   teamB: MatchSide;
 };
 
+/** The walkover. A fixture entry for one team, with no ground, time, runs or net run rate. */
+export type ByeFixture = {
+  code: "BYE";
+  number: number;
+  group: "A";
+  slot: string;
+  teamId: string;
+  label: string;
+};
+
 export type DrawPlan = {
   algorithm: string;
   /** Hex entropy that fully determines this plan together with the roster. */
@@ -74,6 +85,9 @@ export type DrawPlan = {
   seeds: { championId: string; runnerUpId: string; semifinalistIds: [string, string] };
   result: DrawResult;
   matches: PlannedMatch[];
+  bye: ByeFixture;
+  /** The times the plan was built with. Later changes by organizers are kept on the draw, not in this record. */
+  timetable: Timetable;
   /** Plain-language warnings about the schedule, such as short knockout rest. Never silent failures. */
   notes: string[];
 };
@@ -98,6 +112,10 @@ export type OfficialDrawView = {
   publishedByLabel: string | null;
   plan: DrawPlan;
   scheduleVersionId: string;
+  /** The times in force now: the plan's, plus any rescheduling by organizers. */
+  timetable: Timetable;
+  /** When an organizer confirmed the final group standings, so the quarterfinals could be filled. */
+  standingsConfirmedAt: string | null;
 };
 
 export type LiveFixture = {
@@ -120,4 +138,6 @@ export type LiveFixture = {
   /** Each side's innings as "48/3 (6.0)", once a score is recorded. */
   scoreA: string | null;
   scoreB: string | null;
+  isBye: boolean;
+  changeNote: string | null;
 };

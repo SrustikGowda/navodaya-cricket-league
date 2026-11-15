@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { writeAudit } from "../audit";
 import type { Db, Queryable } from "../db";
 import { DomainError } from "../errors";
@@ -6,7 +7,7 @@ import { recordResultTx } from "../schedule";
 import { num, requiredStr, str, type Row } from "../rows";
 import { lockActiveSeason } from "../season";
 import type { Actor } from "../types";
-import { pairQuarterfinals } from "./bracket";
+import { pairQuarterfinals, type Qualifier } from "./bracket";
 import { syncEditionHistory } from "./history";
 import { advanceWinner } from "./knockouts";
 import { loadDecisions, loadLeagueScores, qualificationFor, getOfficialDraw } from "./service";
@@ -62,6 +63,7 @@ export async function recordMatchScore(db: Db, actor: Actor, fixtureId: string, 
     const rows = await query.query<Row>("select * from fixtures where id = $1 and season_id = $2 for update", [fixtureId, season.id]);
     const fixture = rows[0];
     if (!fixture || !fixture.draw_id) throw new DomainError("That match is not part of the official draw.", 404, "not_found");
+    if (fixture.is_bye === true || fixture.is_bye === "t") throw new DomainError("A BYE is a walkover, not a match. It has no score.", 422, "bye");
     const a = str(fixture, "team_a_registration_id");
     const b = str(fixture, "team_b_registration_id");
     if (!a || !b) throw new DomainError("Both teams are not known yet, so a result cannot be recorded for this match.", 422, "teams_unknown");
@@ -131,19 +133,38 @@ export async function recordMatchScore(db: Db, actor: Actor, fixtureId: string, 
   return outcome;
 }
 
+/** A fingerprint of who qualified and in what order, so a later correction that changes it is noticed. */
+export function qualifiersHash(qualifiers: Qualifier[]): string {
+  const line = [...qualifiers].sort((a, b) => a.group.localeCompare(b.group) || a.rank - b.rank).map((q) => `${q.group}${q.rank}:${q.teamId}`).join("|");
+  return createHash("sha256").update(line).digest("hex");
+}
+
 /**
- * Fills the quarterfinals once all 27 league results are in and no tie needs a human decision. Teams already
- * in a quarterfinal are never overwritten; if the standings later change, the match is flagged instead.
+ * Fills the quarterfinals once all 28 league results are in, no tie needs a human decision, and an organizer has
+ * confirmed the final standings. Teams already in a quarterfinal are never overwritten; if the standings change
+ * after confirmation, the matches are flagged instead and the organizer confirms again.
  */
 export async function resolveBracketTx(query: Queryable, actor: Actor, drawId: string): Promise<boolean> {
-  const drawRows = await query.query<Row>("select plan from draws where id = $1", [drawId]);
+  const drawRows = await query.query<Row>("select plan, standings_confirmed_hash from draws where id = $1", [drawId]);
   if (!drawRows[0]) return false;
   const plan = (typeof drawRows[0].plan === "string" ? JSON.parse(drawRows[0].plan) : drawRows[0].plan) as DrawPlan;
+  const confirmedHash = str(drawRows[0], "standings_confirmed_hash");
+  if (!confirmedHash) return false;
   const [scores, decisions] = await Promise.all([loadLeagueScores(query, drawId), loadDecisions(query, drawId)]);
   const qualification = qualificationFor(plan, scores, decisions);
-  if (!qualification.qualifiers) return false;
-
   const names = new Map(plan.roster.map((team) => [team.id, team.name]));
+
+  if (!qualification.qualifiers || qualifiersHash(qualification.qualifiers) !== confirmedHash) {
+    const filled = await query.query<Row>("select id from fixtures where draw_id = $1 and stage = 'quarterfinal' and team_a_registration_id is not null", [drawId]);
+    for (const row of filled) {
+      await query.execute("update fixtures set needs_resolution = true, resolution_note = $1 where id = $2", [
+        "The league standings changed after an organizer confirmed them. Confirm the standings again before this quarterfinal is played. The teams were not changed automatically.",
+        requiredStr(row, "id"),
+      ]);
+    }
+    return false;
+  }
+
   const pairs = pairQuarterfinals(qualification.qualifiers);
   let changed = false;
   for (const pair of pairs) {
@@ -162,17 +183,43 @@ export async function resolveBracketTx(query: Queryable, actor: Actor, drawId: s
     } else if (currentA !== pair.teamAId || currentB !== pair.teamBId) {
       await query.execute(
         "update fixtures set needs_resolution = true, resolution_note = $1 where id = $2",
-        ["The league standings changed after this quarterfinal was filled. Confirm the teams before it is played. They were not changed automatically.", requiredStr(fixture, "id")],
+        ["The confirmed standings do not match the teams in this quarterfinal. Confirm the teams before it is played. They were not changed automatically.", requiredStr(fixture, "id")],
       );
     }
   }
   if (changed) {
     await writeAudit(query, actor.id, "draw.bracket", "draw", drawId, {
-      qualifiers: qualification.qualifiers.map((q) => ({ seed: q.seed, team: names.get(q.teamId) ?? q.teamId })),
-      quarterfinals: pairs.map((pair) => ({ code: pair.code, a: names.get(pair.teamAId), b: names.get(pair.teamBId), sameGroup: pair.sameGroup })),
+      qualifiers: qualification.qualifiers.map((q) => ({ group: q.group, rank: q.rank, team: names.get(q.teamId) ?? q.teamId })),
+      quarterfinals: pairs.map((pair) => ({ code: pair.code, a: names.get(pair.teamAId), b: names.get(pair.teamBId) })),
     });
   }
   return changed;
+}
+
+/**
+ * An organizer confirms the final group standings. Only then do the quarterfinals fill in. Needs all 28 league
+ * results and no unresolved tie for a qualifying place. Recorded with who confirmed it and what they confirmed.
+ */
+export async function confirmStandings(db: Db, actor: Actor): Promise<{ bracketResolved: boolean }> {
+  if (actor.role !== "organizer") throw new DomainError("Organizer access is required.", 403, "forbidden");
+  const outcome = await db.tx(async (query) => {
+    await lockActiveSeason(query);
+    const draw = await getOfficialDraw(query);
+    if (!draw) throw new DomainError("There is no official draw.", 404, "no_draw");
+    const [scores, decisions] = await Promise.all([loadLeagueScores(query, draw.id), loadDecisions(query, draw.id)]);
+    const qualification = qualificationFor(draw.plan, scores, decisions);
+    if (!qualification.leagueComplete) throw new DomainError("Every league match needs a result before the standings can be confirmed.", 409, "league_incomplete");
+    if (!qualification.qualifiers) throw new DomainError(`${qualification.blockers.join(" ")} Nothing was confirmed.`, 409, "tie_unresolved");
+    const hash = qualifiersHash(qualification.qualifiers);
+    const names = new Map(draw.plan.roster.map((team) => [team.id, team.name]));
+    await query.execute("update draws set standings_confirmed_at = now(), standings_confirmed_by = $1, standings_confirmed_hash = $2 where id = $3", [actor.id, hash, draw.id]);
+    await writeAudit(query, actor.id, "draw.standings_confirmed", "draw", draw.id, {
+      qualifiers: qualification.qualifiers.map((q) => ({ group: q.group, rank: q.rank, team: names.get(q.teamId) ?? q.teamId })),
+    });
+    return { bracketResolved: await resolveBracketTx(query, actor, draw.id) };
+  });
+  clearReadCache();
+  return outcome;
 }
 
 /** Records an organizer's ordering for teams that are level on every published criterion. */

@@ -9,9 +9,11 @@ export type Beat =
   | { kind: "seeds-intro"; at: number; dur: number }
   | { kind: "place"; at: number; dur: number; step: RevealStep; revealMs: number; flyMs: number }
   | { kind: "draw-intro"; at: number; dur: number }
+  | { kind: "bye"; at: number; dur: number; step: RevealStep; revealMs: number }
   | { kind: "groups"; at: number; dur: number }
   | { kind: "fixtures"; at: number; dur: number; group: GroupCode }
   | { kind: "schedule"; at: number; dur: number; day: 1 | 2 }
+  | { kind: "knockouts"; at: number; dur: number }
   | { kind: "done"; at: number; dur: number };
 
 export type Timeline = { beats: Beat[]; total: number };
@@ -35,9 +37,11 @@ const BASE = {
   drawReveal: 900,
   drawFly: 700,
   settle: 150,
+  bye: 5200,
   groups: 5000,
-  fixturesPerGroup: 3200,
-  schedulePerDay: 4800,
+  fixturesPerGroup: 4600,
+  schedulePerDay: 5200,
+  knockouts: 4600,
   done: 0,
 };
 
@@ -51,9 +55,11 @@ const REDUCED = {
   drawReveal: 450,
   drawFly: 0,
   settle: 0,
+  bye: 1600,
   groups: 2200,
-  fixturesPerGroup: 1400,
+  fixturesPerGroup: 1600,
   schedulePerDay: 2200,
+  knockouts: 1800,
   done: 0,
 };
 
@@ -73,6 +79,7 @@ export function buildTimeline(plan: DrawPlan, options: TimelineOptions = {}): Ti
   push({ kind: "seeds-intro", dur: table.seedsIntro });
   const seeds = plan.result.reveal.filter((step) => step.phase === "seed");
   const draws = plan.result.reveal.filter((step) => step.phase === "draw");
+  const bye = plan.result.reveal.find((step) => step.phase === "bye");
   for (const step of seeds) {
     push({ kind: "place", step, revealMs: Math.round(table.seedReveal / speed), flyMs: Math.round(table.seedFly / speed), dur: table.seedReveal + table.seedFly + table.settle });
   }
@@ -80,9 +87,11 @@ export function buildTimeline(plan: DrawPlan, options: TimelineOptions = {}): Ti
   for (const step of draws) {
     push({ kind: "place", step, revealMs: Math.round(table.drawReveal / speed), flyMs: Math.round(table.drawFly / speed), dur: table.drawReveal + table.drawFly + table.settle });
   }
+  if (bye) push({ kind: "bye", step: bye, revealMs: Math.round(table.bye / speed), dur: table.bye });
   push({ kind: "groups", dur: table.groups });
-  for (const group of ["A", "B", "C"] as const) push({ kind: "fixtures", group, dur: table.fixturesPerGroup });
+  for (const group of ["A", "B"] as const) push({ kind: "fixtures", group, dur: table.fixturesPerGroup });
   for (const day of [1, 2] as const) push({ kind: "schedule", day, dur: table.schedulePerDay });
+  push({ kind: "knockouts", dur: table.knockouts });
   push({ kind: "done", dur: table.done });
   return { beats, total: at };
 }
@@ -99,5 +108,5 @@ export function beatIndexAt(timeline: Timeline, elapsed: number): number {
 
 /** Teams already settled in their positions when beat `index` is playing (the current one is still in flight). */
 export function placedBefore(timeline: Timeline, index: number): RevealStep[] {
-  return timeline.beats.slice(0, index).flatMap((beat) => (beat.kind === "place" ? [beat.step] : []));
+  return timeline.beats.slice(0, index).flatMap((beat) => (beat.kind === "place" || beat.kind === "bye" ? [beat.step] : []));
 }

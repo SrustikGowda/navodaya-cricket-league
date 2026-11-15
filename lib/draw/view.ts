@@ -3,7 +3,7 @@
 
 import { istParts } from "../format";
 import { GROUND_NAMES } from "./config";
-import type { DrawPlan, GroundCode, GroupCode, LiveFixture, PlannedMatch, SeedRole, SlotAssignment, Stage } from "./types";
+import type { ByeFixture, DrawPlan, GroundCode, GroupCode, LiveFixture, PlannedMatch, SeedRole, SlotAssignment, Stage } from "./types";
 
 export type ViewSide = { teamId: string | null; label: string; slot: string | null; placeholder: string | null };
 
@@ -30,7 +30,12 @@ export type ViewMatch = {
   fixtureId: string | null;
   scoreA: string | null;
   scoreB: string | null;
+  /** Set when an organizer moved the match: "Rescheduled: rain delay". Shown on the card. */
+  changeNote: string | null;
 };
+
+/** The walkover as the page shows it: an entry in one team's list, with no time or ground. */
+export type ViewBye = ByeFixture & { fixtureId: string | null; status: string; points: number };
 
 export const STAGE_LABEL: Record<Stage, string> = { league: "League", quarterfinal: "Quarterfinal", semifinal: "Semifinal", final: "Final" };
 export const DAY_LABEL: Record<1 | 2, string> = { 1: "Saturday", 2: "Sunday" };
@@ -92,8 +97,23 @@ export function buildViewMatches(plan: DrawPlan, live?: LiveFixture[]): ViewMatc
       fixtureId: row?.id ?? null,
       scoreA: row?.scoreA ?? null,
       scoreB: row?.scoreB ?? null,
+      changeNote: row?.changeNote ?? null,
     };
   });
+}
+
+export function buildViewBye(plan: DrawPlan, live?: LiveFixture[]): ViewBye {
+  const row = (live ?? []).find((fixture) => fixture.isBye);
+  return { ...plan.bye, fixtureId: row?.id ?? null, status: row?.status ?? "completed", points: 2 };
+}
+
+/** One line of a team's league list: a real match, or its BYE. */
+export type TeamEntry = { kind: "match"; match: ViewMatch } | { kind: "bye"; bye: ViewBye };
+
+/** A team's league fixture entries in playing order. Always three; the BYE team's third is the BYE, listed last. */
+export function teamEntries(matches: ViewMatch[], bye: ViewBye, teamId: string): TeamEntry[] {
+  const own: TeamEntry[] = leagueMatchesOf(matches, teamId).map((match) => ({ kind: "match", match }));
+  return bye.teamId === teamId ? [...own, { kind: "bye", bye }] : own;
 }
 
 export function stageText(match: Pick<ViewMatch, "stage" | "group" | "code">): string {

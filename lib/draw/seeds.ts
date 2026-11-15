@@ -59,7 +59,7 @@ function resolveOne(spec: SeedSpec, roster: RosterTeam[]): RosterTeam {
   );
 }
 
-/** Roster must contain exactly 18 distinct approved teams. */
+/** Roster must contain exactly 19 distinct approved teams. */
 export function assertRoster(roster: RosterTeam[]): void {
   const ids = new Set(roster.map((team) => team.id));
   if (ids.size !== roster.length) {
