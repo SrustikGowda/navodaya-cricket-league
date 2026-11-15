@@ -38,9 +38,51 @@
   color: #f0c862;
 }
 .re-warn {
+  display: grid;
+  gap: 0.7rem;
   border: 1px solid rgba(240, 179, 168, 0.45);
   background: rgba(240, 120, 100, 0.1);
   color: #f6d3cc;
+}
+.re-warn p {
+  margin: 0;
+}
+.re-missing {
+  display: grid;
+  gap: 0.4rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid rgba(240, 179, 168, 0.25);
+}
+.re-missing > p small {
+  display: block;
+  color: #e6c2ba;
+  font-size: 0.82rem;
+}
+.re-missing ul {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.re-missing li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.6rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.22);
+  color: #efeadf;
+}
+.re-missing li small {
+  display: block;
+  margin-top: 0.15rem;
+  color: #a89f90;
+  font-size: 0.78rem;
+}
+.re-missing .re-link {
+  min-height: 32px;
 }
 
 /* Small square buttons: move up, move down, delete. */
