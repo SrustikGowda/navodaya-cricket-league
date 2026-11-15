@@ -46,6 +46,39 @@ test("the 19-team, two-group format is shown, and nothing from the old format is
   await noOverflow(page);
 });
 
+test("the rules page is complete, searchable, linked from the menu, and fits a phone", async ({ page }, testInfo) => {
+  await page.goto("/2026/rules");
+  await expect(page.getByRole("heading", { name: "Rules", exact: true })).toBeVisible();
+  await expect(page.getByText("Tournament rules and guidelines")).toBeVisible();
+  await expect(page.locator(".rb-sec")).toHaveCount(10);
+  await expect(page.locator(".rb-rules > li")).toHaveCount(52);
+  await expect(page.getByRole("heading", { name: "At a glance" })).toBeVisible();
+  await expect(page.locator(".rb-glance li")).toHaveCount(8);
+  await expect(page.locator("#points")).toContainText("QF1: Group A #1 v Group B #4");
+  await expect(page.locator("#format")).toContainText("19 teams");
+  await expect(page.getByText(/NCL 14|November 2025|Jagadeesh/)).toHaveCount(0);
+  // Search narrows the rules and keeps their numbers.
+  await page.getByRole("searchbox", { name: "Find a rule" }).fill("LBW");
+  await expect(page.locator(".rb-rules > li")).toHaveCount(1);
+  await expect(page.locator(".rb-rules > li")).toContainText("no LBW");
+  await expect(page.locator(".rb-rules > li .rb-ref")).toHaveText("9.1");
+  await expect(page.locator(".rb-count")).toContainText("1 match");
+  await page.getByRole("button", { name: "Show all rules" }).click();
+  await expect(page.locator(".rb-rules > li")).toHaveCount(52);
+  await page.getByRole("searchbox", { name: "Find a rule" }).fill("zzzz");
+  await expect(page.locator(".rb-count")).toContainText("No rule mentions");
+  await page.getByRole("searchbox", { name: "Find a rule" }).fill("");
+  await page.getByRole("navigation", { name: "Sections" }).getByRole("link", { name: /Timing and penalties/ }).click();
+  await expect(page).toHaveURL(/#timing$/);
+  await expect(page.locator("#timing table").first()).toContainText("10 runs added to the opponent's score");
+  await noOverflow(page);
+  if (testInfo.project.name === "desktop") {
+    await page.goto("/2026/fixtures");
+    await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Rules" }).click();
+    await expect(page).toHaveURL(/\/2026\/rules$/);
+  }
+});
+
 test("a trial run plays the whole draw, is marked as unofficial, repeats, and writes nothing", async ({ page }) => {
   const writes: string[] = [];
   page.on("request", (request) => {

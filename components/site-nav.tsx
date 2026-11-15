@@ -8,6 +8,7 @@ const PRIMARY = [
   { href: "/2026/fixtures", label: "Fixtures" },
   { href: "/2026/teams", label: "Teams" },
   { href: "/2026/standings", label: "Standings" },
+  { href: "/2026/rules", label: "Rules" },
 ] as const;
 
 export function HeaderHistory() {
@@ -44,6 +45,7 @@ export function MobileNav() {
         <summary>More</summary>
         <div>
           <Link href="/2026/standings">Standings</Link>
+          <Link href="/2026/rules">Rules</Link>
           <Link href="/2026/match-day">Match day</Link>
         </div>
       </details>

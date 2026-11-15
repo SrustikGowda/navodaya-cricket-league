@@ -308,6 +308,9 @@ export function ScheduleViews({
         </ul>
         <p className="dr-rules-h">Tied knockout matches</p>
         <p>{KNOCKOUT_TIE_RULE}</p>
+        <p className="dr-rules-link">
+          <a href="/2026/rules">Read the full tournament rules →</a>
+        </p>
         <p className="dr-rules-foot">{LEAGUE_MATCHES} league matches, 4 quarterfinals, 2 semifinals and the final: 35 matches. League and quarterfinals are 6 overs a side; semifinals and the final are 8.</p>
       </details>
     </div>
