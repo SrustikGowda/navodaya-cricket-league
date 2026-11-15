@@ -91,7 +91,7 @@ test("organizers edit the rules, the public page follows, and saving the standar
   assert.deepEqual(first.content, first.standard);
   assert.equal(
     first.content.sections.reduce((n, s) => n + s.rules.length, 0),
-    52,
+    53,
   );
   const standardBook = (await publicRulebook(db)).book;
 
@@ -148,6 +148,6 @@ test("organizers edit the rules, the public page follows, and saving the standar
     ["rules.update", "rules.update", "rules.reset"],
   );
   assert.equal(audit[0]?.payload.sections, 11);
-  assert.equal(audit[0]?.payload.rules, 53);
+  assert.equal(audit[0]?.payload.rules, 54);
   await db.close();
 });

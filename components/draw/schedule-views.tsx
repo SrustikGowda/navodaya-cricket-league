@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { track } from "@/components/analytics-tracker";
 import { compareBatch } from "@/lib/batch-order";
 import { BYE_RULES, KNOCKOUT_TIE_RULE, LEAGUE_MATCHES, QUALIFICATION_RULES, TIE_BREAKERS, type Timetable } from "@/lib/draw/config";
+import { groundShareText, teamGroundSplit, type GroundSplit } from "@/lib/draw/grounds";
 import { renderShareCard } from "@/lib/draw/share-image";
 import type { Qualification } from "@/lib/draw/standings";
 import type { DrawPlan, GroupCode, LiveFixture, PublicTeam } from "@/lib/draw/types";
@@ -23,6 +24,7 @@ import {
   type ViewMatch,
 } from "@/lib/draw/view";
 import { Bracket } from "./bracket";
+import { GroundTiles } from "./ground-share";
 import { GroupCards, GroupPanel } from "./group-views";
 import { ByeCard, MatchCard } from "./match-card";
 import { StandingsBoard } from "./standings-board";
@@ -89,6 +91,8 @@ export function ScheduleViews({
   const matches = useMemo(() => buildViewMatches(plan, fixtures), [plan, fixtures]);
   const bye = useMemo(() => buildViewBye(plan, fixtures), [plan, fixtures]);
   const names = useMemo(() => teamNames(plan), [plan]);
+  // From the live fixtures, so a match moved to the other ground shows straight away.
+  const grounds = useMemo(() => teamGroundSplit(matches.map((m) => ({ stage: m.stage, ground: m.ground, teamIds: [m.a.teamId, m.b.teamId] }))), [matches]);
   const teamMap = useMemo(() => new Map(teams.map((team) => [team.id, team])), [teams]);
   // Oldest batch first, the same order as the Teams page.
   const orderedTeams = useMemo(
@@ -176,7 +180,7 @@ export function ScheduleViews({
 
   return (
     <div className={official ? "dr-views" : "dr-views dr-views--trial"} ref={rootRef} id="dr-views" data-ref={drawRef ?? undefined}>
-      <GroupCards plan={plan} teams={teamMap} onTeam={openTeam} onGroup={openGroup} />
+      <GroupCards plan={plan} teams={teamMap} grounds={grounds} onTeam={openTeam} onGroup={openGroup} />
 
       <div className="dr-views-bar">
         <div className="dr-tabs" role="tablist" aria-label="Fixture views">
@@ -273,10 +277,10 @@ export function ScheduleViews({
             <Timetable matches={listed} day={day} timetable={timetable ?? plan.timetable} onTeam={openTeam} highlightTeam={filters.team || null} linkable={official} bye={filters.team === bye.teamId ? bye : null} />
           </>
         ) : null}
-        {tab === "groupA" ? <GroupPanel group="A" plan={plan} matches={matches} onTeam={openTeam} linkable={official} /> : null}
-        {tab === "groupB" ? <GroupPanel group="B" plan={plan} matches={matches} onTeam={openTeam} linkable={official} /> : null}
+        {tab === "groupA" ? <GroupPanel group="A" plan={plan} matches={matches} grounds={grounds} onTeam={openTeam} linkable={official} /> : null}
+        {tab === "groupB" ? <GroupPanel group="B" plan={plan} matches={matches} grounds={grounds} onTeam={openTeam} linkable={official} /> : null}
         {tab === "knockouts" ? <Bracket matches={matches} onTeam={official ? openTeam : undefined} /> : null}
-        {tab === "team" ? <TeamPanel kind={kind} plan={plan} matches={matches} bye={bye} teamId={team} setTeam={setTeam} orderedTeams={orderedTeams} teams={teamMap} drawRef={drawRef ?? null} onTeam={openTeam} /> : null}
+        {tab === "team" ? <TeamPanel kind={kind} plan={plan} matches={matches} bye={bye} grounds={grounds} teamId={team} setTeam={setTeam} orderedTeams={orderedTeams} teams={teamMap} drawRef={drawRef ?? null} onTeam={openTeam} /> : null}
         {tab === "standings" && official ? (
           qualification ? (
             <StandingsBoard qualification={qualification} names={names} teams={teamMap} onTeam={openTeam} confirmedAt={confirmedAt ?? null} />
@@ -306,6 +310,8 @@ export function ScheduleViews({
             <li key={rule}>{rule}</li>
           ))}
         </ul>
+        <p className="dr-rules-h">Grounds</p>
+        <p>{groundShareText()}</p>
         <p className="dr-rules-h">Tied knockout matches</p>
         <p>{KNOCKOUT_TIE_RULE}</p>
         <p className="dr-rules-link">
@@ -410,6 +416,7 @@ function TeamPanel({
   plan,
   matches,
   bye,
+  grounds,
   teamId,
   setTeam,
   orderedTeams,
@@ -421,6 +428,7 @@ function TeamPanel({
   plan: DrawPlan;
   matches: ViewMatch[];
   bye: ViewBye;
+  grounds: Map<string, GroundSplit>;
   teamId: string;
   setTeam: (id: string) => void;
   orderedTeams: { id: string; name: string }[];
@@ -508,6 +516,7 @@ function TeamPanel({
 
   if (!teamId || !assignment) return <p className="dr-empty">Choose a team.</p>;
   const hasBye = bye.teamId === teamId;
+  const share = grounds.get(teamId);
   return (
     <div className="dr-team">
       <label className="dr-select dr-select--wide">
@@ -531,6 +540,14 @@ function TeamPanel({
           </p>
         </div>
       </header>
+      {share ? (
+        <p className="dr-team-grounds">
+          <GroundTiles split={share} />
+          <span>
+            League grounds: <b>{share.A} on Ground A</b> · {share.B} on Ground B
+          </span>
+        </p>
+      ) : null}
       <div className="dr-list">
         {entries.map((entry) =>
           entry.kind === "match" ? (

@@ -1,6 +1,7 @@
 // Draws the groups and the two-day schedule as A4 pages on a canvas, and saves them as one PNG or a PDF. Client only.
 
 import { BYE_CODE, OPPONENT_TEMPLATE } from "./config";
+import { teamGroundSplit } from "./grounds";
 import type { DrawPlan } from "./types";
 import { SEED_TEXT, slotCodeOf, timeText, type ViewBye, type ViewMatch } from "./view";
 
@@ -85,6 +86,7 @@ function groupsPage(data: SheetData): HTMLCanvasElement {
   const { canvas, g } = page(data, "Groups", "19 teams · Group A 9 + BYE · Group B 10");
   const by = new Map(data.plan.result.assignments.map((a) => [slotCodeOf(a), a]));
   const nameOf = (code: string) => (code === BYE_CODE ? "BYE" : data.names.get(by.get(code)?.teamId ?? "") ?? code);
+  const grounds = teamGroundSplit(data.matches.map((m) => ({ stage: m.stage, ground: m.ground, teamIds: [m.a.teamId, m.b.teamId] })));
   (["A", "B"] as const).forEach((group, column) => {
     const x = 70 + column * 560;
     const rows = Object.entries(OPPONENT_TEMPLATE[group]);
@@ -115,6 +117,14 @@ function groupsPage(data: SheetData): HTMLCanvasElement {
       g.fillStyle = MUTED;
       g.font = `500 22px ${FONT}`;
       g.fillText(`vs ${opponents.map((o) => (o === BYE_CODE ? "BYE" : `${o}`)).join(" · ")}`, x + 100, y + 66);
+      const split = a ? grounds.get(a.teamId) : undefined;
+      if (split) {
+        g.fillStyle = GOLD;
+        g.font = `700 21px ${FONT}`;
+        g.textAlign = "right";
+        g.fillText(`A×${split.A} · B×${split.B}`, x + 512, y + 66);
+        g.textAlign = "left";
+      }
       g.fillStyle = "rgba(240,200,98,0.12)";
       g.fillRect(x + 28, y + 90, 484, 1);
     });
@@ -134,7 +144,8 @@ function groupsPage(data: SheetData): HTMLCanvasElement {
   });
   g.fillStyle = MUTED;
   g.font = `500 22px ${FONT}`;
-  g.fillText("Every team plays 3 league fixtures. Only A9 has a BYE, a walkover worth 2 points.", 70, 1640);
+  g.fillText("Every team plays 3 league fixtures. Only A9 has a BYE, a walkover worth 2 points.", 70, 1600);
+  g.fillText("A×2 · B×1: league matches on Ground A and Ground B. Every team plays on both grounds.", 70, 1636);
   return canvas;
 }
 

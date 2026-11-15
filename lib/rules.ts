@@ -17,6 +17,7 @@ import {
   TEAM_COUNT,
   type Timetable,
 } from "./draw/config";
+import { groundShareText } from "./draw/grounds";
 import { leagueSlotStarts } from "./draw/schedule";
 import { FEE_FREE_FROM_YEAR } from "./fee-state";
 import { clock } from "./draw/validate";
@@ -122,6 +123,10 @@ export function buildRulebook(input: RulebookInput): Rulebook {
         {
           text: "Every team gets three league fixtures. The draw places each team in a position (A1 to A9, B1 to B10), and every position always plays the same three opponents.",
           note: "The Fixtures page shows who plays whom for every position.",
+        },
+        {
+          text: groundShareText(),
+          note: "On the Fixtures page, each team shows a gold A for every league match on Ground A and a B for every match on Ground B.",
         },
         {
           text: `As per NCL tradition, the defending champions, ${seed("champion")}, play the first match of the tournament. They are placed at A1, and the opening match is A1 v A2.`,

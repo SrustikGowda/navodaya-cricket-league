@@ -32,11 +32,12 @@ test("the 19-team, two-group format is shown, and nothing from the old format is
   await expect(how.locator(".gw").nth(1).locator(".gw-node")).toHaveCount(10);
   await expect(how.locator(".gw").nth(0).locator(".gw-edge")).toHaveCount(14);
   await expect(how.locator(".gw").nth(1).locator(".gw-edge")).toHaveCount(15);
-  await expect(how.getByText(/^A1 plays A2, A5 and A6\. A1 v A2 is the opening match\.$/)).toBeVisible();
+  await expect(how.getByText(/^A1 plays A2, A5 and A6\. 1 on Ground A, 2 on Ground B\. A1 v A2 is the opening match\.$/)).toBeVisible();
   await how.locator(".gw-node").filter({ hasText: /^A9$/ }).click();
-  await expect(how.getByText("A9 plays A4, A8 and a BYE.")).toBeVisible();
+  await expect(how.getByText("A9 plays A4, A8 and a BYE. 1 on Ground A, 1 on Ground B.")).toBeVisible();
   await how.locator(".gw-node").filter({ hasText: /^B6$/ }).click();
-  await expect(how.getByText("B6 plays B1, B5 and B7.")).toBeVisible();
+  await expect(how.getByText("B6 plays B1, B5 and B7. 2 on Ground A, 1 on Ground B.")).toBeVisible();
+  await expect(how.locator(".dr-how-foot").last()).toContainText("Every team plays at least one league match on each ground");
   // No team names there: it explains the idea, it does not hint at the result.
   await expect(how.getByText(/4s-11|RCB United|Junglees/)).toHaveCount(0);
   // No trace of the old 18-team, three-group format, and no picture of it.
@@ -51,11 +52,12 @@ test("the rules page is complete, searchable, linked from the menu, and fits a p
   await expect(page.getByRole("heading", { name: "Rules", exact: true })).toBeVisible();
   await expect(page.getByText("Tournament rules and guidelines")).toBeVisible();
   await expect(page.locator(".rb-sec")).toHaveCount(10);
-  await expect(page.locator(".rb-rules > li")).toHaveCount(52);
+  await expect(page.locator(".rb-rules > li")).toHaveCount(53);
   await expect(page.getByRole("heading", { name: "At a glance" })).toBeVisible();
   await expect(page.locator(".rb-glance li")).toHaveCount(8);
   await expect(page.locator("#points")).toContainText("QF1: Group A #1 v Group B #4");
   await expect(page.locator("#format")).toContainText("19 teams");
+  await expect(page.locator("#format")).toContainText("9 teams play two of their three on Ground A and 9 play two on Ground B");
   await expect(page.getByText(/NCL 14|November 2025|Jagadeesh/)).toHaveCount(0);
   // Search narrows the rules and keeps their numbers.
   await page.getByRole("searchbox", { name: "Find a rule" }).fill("LBW");
@@ -64,7 +66,7 @@ test("the rules page is complete, searchable, linked from the menu, and fits a p
   await expect(page.locator(".rb-rules > li .rb-ref")).toHaveText("9.1");
   await expect(page.locator(".rb-count")).toContainText("1 match");
   await page.getByRole("button", { name: "Show all rules" }).click();
-  await expect(page.locator(".rb-rules > li")).toHaveCount(52);
+  await expect(page.locator(".rb-rules > li")).toHaveCount(53);
   await page.getByRole("searchbox", { name: "Find a rule" }).fill("zzzz");
   await expect(page.locator(".rb-count")).toContainText("No rule mentions");
   await page.getByRole("searchbox", { name: "Find a rule" }).fill("");
@@ -112,7 +114,7 @@ test("organizers edit the rules in Admin › Rules, the public page follows, and
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.locator(".re-bar")).toContainText("shows the standard rules");
   await page.goto("/2026/rules");
-  await expect(page.locator(".rb-rules > li")).toHaveCount(52);
+  await expect(page.locator(".rb-rules > li")).toHaveCount(53);
   await expect(page.locator(".rb-glance li")).toHaveCount(8);
   await expect(page.getByText("Agreed at the captains' meeting")).toHaveCount(0);
 });
@@ -162,6 +164,17 @@ test("a trial run plays the whole draw, is marked as unofficial, repeats, and wr
   const views = page.locator(".dr-views--trial");
   await expect(views.locator(".gc")).toHaveCount(2);
   await expect(views.locator(".gc-bye").first()).toContainText("2 matches + 1 BYE");
+  // Ground A is shared out: every team shows its league grounds, and each plays on both.
+  const tiles = views.locator(".gc .dr-gt");
+  await expect(tiles).toHaveCount(19);
+  for (let i = 0; i < 19; i += 1) {
+    const tile = tiles.nth(i);
+    expect(await tile.locator("i.is-a").count()).toBeGreaterThanOrEqual(1);
+    expect(await tile.locator("i.is-b").count()).toBeGreaterThanOrEqual(1);
+  }
+  await expect(views.locator(".gc .dr-gt:has(i.is-a + i.is-a)")).toHaveCount(9);
+  await expect(views.locator(".gc li.is-bye .dr-gt i")).toHaveCount(2);
+  await expect(views.locator(".dr-gt-legend")).toContainText("Every team plays at least one on each ground");
   // 20 matches on Saturday, 15 on Sunday (8 league and 7 knockouts): 35 in all.
   await views.getByRole("tab", { name: "Day 1 · Saturday" }).click();
   await expect(views.locator(".dr-match")).toHaveCount(20);
@@ -177,6 +190,7 @@ test("a trial run plays the whole draw, is marked as unofficial, repeats, and wr
   await expect(views.locator(".dr-bk-card:visible", { hasText: "Group A #1" }).first()).toBeVisible();
   await views.getByRole("tab", { name: "My team" }).click();
   await expect(views.locator(".dr-team article.dr-match")).toHaveCount(3);
+  await expect(views.locator(".dr-team-grounds")).toContainText(/League grounds: [12] on Ground A · [12] on Ground B/);
   await noOverflow(page);
 
   await page.getByRole("button", { name: "Try again" }).first().click();

@@ -11,6 +11,7 @@ import {
   SUNDAY_TEMPLATE,
   TEAM_COUNT,
 } from "../lib/draw/config";
+import { groundShareCounts, groundShareText, positionGroundSplit, teamGroundSplit } from "../lib/draw/grounds";
 import { generatePlan, planHash, verifyPlan } from "../lib/draw/plan";
 import { seededRng } from "../lib/draw/rng";
 import { applyTimetable, leagueSlotStarts, opponentsOfPosition, templatePairs, timeSlots } from "../lib/draw/schedule";
@@ -86,7 +87,20 @@ test("the opponent templates are exactly the NCL 2025 pattern, and are internall
 
 test("the two-day order of play is the NCL 2025 order, with the break and times as asked", () => {
   const saturday = SATURDAY_TEMPLATE.map((row) => row.map((pair) => pair.join(" v ")));
+  // [Ground A, Ground B] in each slot. The fifth, sixth and tenth slots swap grounds compared with 2025, to share Ground A out.
   assert.deepEqual(saturday, [
+    ["A1 v A2", "B3 v B8"],
+    ["A6 v A7", "B4 v B9"],
+    ["B2 v B7", "B10 v B1"],
+    ["A3 v A4", "A1 v A6"],
+    ["B1 v B6", "B4 v B5"],
+    ["B9 v B10", "A3 v A8"],
+    ["B3 v B4", "A4 v A9"],
+    ["A5 v A6", "A2 v A7"],
+    ["B8 v B9", "B6 v B7"],
+    ["A8 v A9", "B2 v B3"],
+  ]);
+  const ncl2025 = [
     ["A1 v A2", "B3 v B8"],
     ["A6 v A7", "B4 v B9"],
     ["B2 v B7", "B10 v B1"],
@@ -97,7 +111,12 @@ test("the two-day order of play is the NCL 2025 order, with the break and times 
     ["A5 v A6", "A2 v A7"],
     ["B8 v B9", "B6 v B7"],
     ["B2 v B3", "A8 v A9"],
-  ]);
+  ];
+  assert.deepEqual(
+    saturday.map((row) => [...row].sort()),
+    ncl2025.map((row) => [...row].sort()),
+    "the same matches in the same slots as 2025: only the ground changed",
+  );
   assert.deepEqual(
     SUNDAY_TEMPLATE.map((row) => row.map((pair) => pair.join(" v "))),
     [
@@ -207,6 +226,67 @@ function assertPlanPromises(plan: DrawPlan, label: string) {
   }
   assert.deepEqual(validatePlan(plan).errors, [], `${label}: the engine's own validation agrees`);
 }
+
+test("Ground A is shared out: every team plays a league match on each ground, and the draw decides who gets two on A", () => {
+  const split = positionGroundSplit();
+  assert.equal(split.size, 19);
+  for (const [position, entry] of split) {
+    if (position === "A9") assert.deepEqual(entry, { A: 1, B: 1 }, "the BYE position plays one match on each ground");
+    else {
+      assert.equal(entry.A + entry.B, 3, position);
+      assert.ok(entry.A >= 1 && entry.B >= 1, `${position} plays on both grounds`);
+    }
+  }
+  assert.deepEqual(groundShareCounts(), { twoOnA: 9, twoOnB: 9 });
+  assert.match(groundShareText(), /9 teams play two of their three on Ground A and 9 play two on Ground B/);
+  assert.equal(
+    [...SATURDAY_TEMPLATE, ...SUNDAY_TEMPLATE].length * 2,
+    28,
+    "one match on each ground in every slot: both grounds are equally busy",
+  );
+
+  const champion = idOf("4s-11");
+  const twoOnA = new Map<string, number>();
+  const draws = 400;
+  for (let n = 0; n < draws; n += 1) {
+    const plan = generatePlan({ roster, days: DAYS, entropy: entropyFor(5000 + n) });
+    const grounds = teamGroundSplit(plan.matches.map((m) => ({ stage: m.stage, ground: m.ground, teamIds: [m.teamA.teamId, m.teamB.teamId] })));
+    let teamsWithTwoOnA = 0;
+    for (const team of roster) {
+      const entry = grounds.get(team.id) ?? { A: 0, B: 0 };
+      assert.ok(entry.A >= 1 && entry.B >= 1, `draw ${n}: ${team.name} plays on both grounds`);
+      if (team.id === plan.result.byeTeamId) assert.deepEqual(entry, { A: 1, B: 1 });
+      if (entry.A === 2) {
+        teamsWithTwoOnA += 1;
+        twoOnA.set(team.id, (twoOnA.get(team.id) ?? 0) + 1);
+      }
+    }
+    assert.equal(teamsWithTwoOnA, 9);
+  }
+  // The champion is always at A1: the opening match on Ground A, then two on Ground B. Every other team's share is drawn.
+  assert.equal(twoOnA.get(champion) ?? 0, 0);
+  for (const team of roster.filter((t) => t.id !== champion)) {
+    const times = twoOnA.get(team.id) ?? 0;
+    assert.ok(times > 0 && times < draws, `${team.name} gets two on Ground A in some draws and not in others (${times}/${draws})`);
+  }
+
+  // An organizer may move a match to the other ground; the change is allowed, but noted when it leaves a team on one ground.
+  const plan = generatePlan({ roster, days: DAYS, entropy: entropyFor(12) });
+  const base = timedMatches(plan.matches);
+  assert.ok(!checkSchedule(base).notes.some((note) => note.includes("same ground")));
+  const shares = teamGroundSplit(base.map((m) => ({ stage: m.stage, ground: m.ground, teamIds: m.teams })));
+  const target = [...shares].find(([, share]) => share.A === 1)?.[0];
+  const moveAway = base.find((m) => m.stage === "league" && m.ground === "A" && target && m.teams.includes(target));
+  assert.ok(moveAway, "a team with one match on Ground A");
+  const swapped = base.map((m) => {
+    if (m.code === moveAway.code) return { ...m, ground: "B" as const };
+    if (m.date === moveAway.date && m.startMinutes === moveAway.startMinutes && m.code !== moveAway.code) return { ...m, ground: "A" as const };
+    return m;
+  });
+  const report = checkSchedule(swapped);
+  assert.deepEqual(report.errors, []);
+  assert.ok(report.notes.some((note) => /every league match on the same ground/.test(note)));
+});
 
 test("2000 randomized draws all keep every seeded, fixture, BYE and schedule promise", () => {
   for (let n = 0; n < 2000; n += 1) assertPlanPromises(generatePlan({ roster, days: DAYS, entropy: entropyFor(n) }), `draw ${n}`);
