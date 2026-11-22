@@ -1,6 +1,6 @@
 "use client";
 
-import { LEAGUE_MATCHES, QUALIFICATION_RULES, TIE_BREAKERS } from "@/lib/draw/config";
+import { QUALIFICATION_RULES, TIE_BREAKERS } from "@/lib/draw/config";
 import { formatNrr, type Qualification, type StandingRow } from "@/lib/draw/standings";
 import type { GroupCode, PublicTeam } from "@/lib/draw/types";
 import { TeamMark } from "./team-mark";
@@ -68,7 +68,7 @@ export function StandingsBoard({
   return (
     <div className="dr-standings">
       <p className="dr-st-progress" role="status">
-        <b>{qualification.leagueMatchesPlayed}</b> of {LEAGUE_MATCHES} league results in
+        <b>{qualification.leagueMatchesPlayed}</b> of {qualification.leagueMatchesTotal} league results in
         {qualification.leagueComplete ? (confirmedAt ? " · standings confirmed by the organizers" : " · waiting for the organizers to confirm the standings") : " · tables are provisional until both groups have played all their matches"}
       </p>
 

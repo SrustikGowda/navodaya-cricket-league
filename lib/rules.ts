@@ -3,20 +3,8 @@
 // site's own data, so the rules can never disagree with the Fixtures page.
 
 import { QF_PAIRINGS, SF_PAIRINGS } from "./draw/bracket";
-import {
-  ACTUAL_MATCHES,
-  BYE_POSITION,
-  GROUP_TEAMS,
-  KNOCKOUT_TIE_RULE,
-  LEAGUE_MATCHES,
-  LEAGUE_MATCHES_BY_GROUP,
-  OVERS,
-  POINTS,
-  QUALIFIERS_PER_GROUP,
-  SEED_SPECS,
-  TEAM_COUNT,
-  type Timetable,
-} from "./draw/config";
+import { KNOCKOUT_TIE_RULE, OVERS, POINTS, QUALIFIERS_PER_GROUP, SEED_SPECS, type Timetable } from "./draw/config";
+import { FORMAT_19, type TournamentFormat } from "./draw/formats";
 import { groundShareText } from "./draw/grounds";
 import { leagueSlotStarts } from "./draw/schedule";
 import { FEE_FREE_FROM_YEAR } from "./fee-state";
@@ -62,6 +50,8 @@ export type RulebookInput = {
   fee: string | null;
   ball: string | null;
   timetable: Timetable;
+  /** The tournament format, from the number of teams. Omit for the 19-team format. */
+  format?: TournamentFormat;
 };
 
 const ROMAN = ["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII", "XIII", "XIV", "XV", "XVI", "XVII", "XVIII", "XIX", "XX"];
@@ -73,8 +63,9 @@ const seed = (key: string) => SEED_SPECS.find((spec) => spec.key === key)?.label
 
 export function buildRulebook(input: RulebookInput): Rulebook {
   const t = input.timetable;
-  const saturday = leagueSlotStarts(1, t);
-  const sunday = leagueSlotStarts(2, t);
+  const format = input.format ?? FORMAT_19;
+  const saturday = leagueSlotStarts(1, t, format);
+  const sunday = leagueSlotStarts(2, t, format);
   const satEnd = (saturday.at(-1) ?? t.saturdayStart) + t.leagueMinutes;
   const sunLeagueEnd = (sunday.at(-1) ?? t.sundayStart) + t.leagueMinutes;
   const finalEnd = t.final + t.finalMinutes;
@@ -112,19 +103,21 @@ export function buildRulebook(input: RulebookInput): Rulebook {
     {
       id: "format",
       title: "Format and schedule",
-      summary: `${TEAM_COUNT} teams, two groups, then knockouts, over two days.`,
+      summary: `${format.teams} teams, two groups, then knockouts, over two days.`,
       rules: [
         {
           text: `The tournament is played over two days: ${dayLabel(input.days[0])}, from ${clock(t.saturdayStart)} to ${clock(announcedEnd(satEnd))}, and ${dayLabel(input.days[1])}, from ${clock(t.sundayStart)} to ${clock(announcedEnd(finalEnd))}.`,
           note: "The end time leaves a buffer for delays. Matches are scheduled to finish earlier.",
         },
         {
-          text: `There is a group stage and then a knockout stage. The ${TEAM_COUNT} teams are drawn into two groups: Group A has ${GROUP_TEAMS.A} teams and one BYE, and Group B has ${GROUP_TEAMS.B} teams.`,
+          text: format.byePosition
+            ? `There is a group stage and then a knockout stage. The ${format.teams} teams are drawn into two groups: Group A has ${format.groupTeams.A} teams and one BYE, and Group B has ${format.groupTeams.B} teams.`
+            : `There is a group stage and then a knockout stage. The ${format.teams} teams are drawn into two groups of ${format.groupTeams.A}.`,
         },
         {
-          text: "Every team gets three league fixtures. The draw places each team in a position (A1 to A9, B1 to B10), and every position always plays the same three opponents.",
+          text: `Every team gets three league fixtures. The draw places each team in a position (A1 to A${format.groupTeams.A}, B1 to B${format.groupTeams.B}), and every position always plays the same three opponents.`,
         },
-        { text: groundShareText() },
+        { text: groundShareText(format) },
         {
           text: `As per NCL tradition, the defending champions, ${seed("champion")}, and the runners-up, ${seed("runner_up")}, are placed in different groups at random.`,
           items: [
@@ -132,13 +125,17 @@ export function buildRulebook(input: RulebookInput): Rulebook {
             "Every other position is drawn at random.",
           ],
         },
-        {
-          text: `One team in Group A, at position ${BYE_POSITION}, has a BYE instead of a third match. It is drawn from the unseeded teams.`,
-          note: `A BYE is a walkover worth ${POINTS.bye} points. It is not a match played, and it has no runs, overs or net run rate.`,
-        },
+        ...(format.byePosition
+          ? [
+              {
+                text: `One team in Group A, at position ${format.byePosition}, has a BYE instead of a third match. It is drawn from the unseeded teams.`,
+                note: `A BYE is a walkover worth ${POINTS.bye} points. It is not a match played, and it has no runs, overs or net run rate.`,
+              },
+            ]
+          : []),
         { text: "If a team withdraws after the schedule is final, each of its opponents is awarded that match and its points." },
         {
-          text: `${ACTUAL_MATCHES} matches are played in all: ${LEAGUE_MATCHES} league matches (${LEAGUE_MATCHES_BY_GROUP.A} in Group A and ${LEAGUE_MATCHES_BY_GROUP.B} in Group B), 4 quarterfinals, 2 semifinals and the final.`,
+          text: `${format.actualMatches} matches are played in all: ${format.leagueMatches} league matches (${format.leagueMatchesByGroup.A} in Group A and ${format.leagueMatchesByGroup.B} in Group B), 4 quarterfinals, 2 semifinals and the final.`,
         },
       ],
       tables: [
@@ -193,7 +190,7 @@ export function buildRulebook(input: RulebookInput): Rulebook {
             ["Win", String(POINTS.win)],
             ["Tie or no result", `${POINTS.tie} each`],
             ["Loss", String(POINTS.loss)],
-            ["BYE (Group A, one team)", String(POINTS.bye)],
+            ...(format.byePosition ? [["BYE (Group A, one team)", String(POINTS.bye)]] : []),
           ],
         },
       ],
@@ -382,7 +379,7 @@ export function buildRulebook(input: RulebookInput): Rulebook {
       { label: "Dates", value: input.dates },
       { label: "Venue", value: input.venue },
       ...(input.organizer ? [{ label: "Organized by", value: input.organizer }] : []),
-      { label: "Teams", value: `${TEAM_COUNT} teams · 2 groups` },
+      { label: "Teams", value: `${format.teams} teams · 2 groups` },
     ],
     highlights: [
       `${OVERS.league} overs a side in league matches; ${OVERS.quarterfinal} in the quarterfinals, semifinals and final`,

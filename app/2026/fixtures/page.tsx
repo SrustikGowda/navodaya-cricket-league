@@ -9,6 +9,7 @@ import { PublicShell } from "@/components/shell";
 import { getActor } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { loadBoard } from "@/lib/draw/board";
+import { formatOfPlan, formatToShow } from "@/lib/draw/formats";
 import { drawPasswordConfigured, drawReadiness } from "@/lib/draw/service";
 import { formatIst } from "@/lib/format";
 import { listPublicFixtures } from "@/lib/public-data";
@@ -42,14 +43,14 @@ export default async function FixturesPage({ searchParams }: { searchParams: Pro
           initialBoard={board}
           isOrganizer={isOrganizer}
           passwordConfigured={drawPasswordConfigured()}
-          readiness={{ ready: readiness.ready, message: readiness.message }}
+          readiness={{ ready: readiness.ready, message: readiness.message, teamCount: readiness.teamCount }}
           initial={{ tab: params.tab, team: params.team, day: params.day, stage: params.stage, ground: params.ground, group: params.group }}
           about={
             <>
               <div className="dr-about-head">
                 <h2 id="dr-format-title">The format</h2>
               </div>
-              <TournamentFormat />
+              <TournamentFormat format={board.official ? formatOfPlan(board.official.plan) : formatToShow(readiness.teamCount)} />
             </>
           }
         >

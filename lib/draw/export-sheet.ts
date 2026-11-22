@@ -1,6 +1,7 @@
 // Draws the groups and the two-day schedule as A4 pages on a canvas, and saves them as one PNG or a PDF. Client only.
 
-import { BYE_CODE, OPPONENT_TEMPLATE } from "./config";
+import { BYE_CODE } from "./config";
+import { formatOfPlan } from "./formats";
 import { teamGroundSplit } from "./grounds";
 import type { DrawPlan } from "./types";
 import { SEED_TEXT, slotCodeOf, timeText, type ViewBye, type ViewMatch } from "./view";
@@ -8,7 +9,7 @@ import { SEED_TEXT, slotCodeOf, timeText, type ViewBye, type ViewMatch } from ".
 export type SheetData = {
   plan: DrawPlan;
   matches: ViewMatch[];
-  bye: ViewBye;
+  bye: ViewBye | null;
   official: boolean;
   drawRef: string | null;
   names: Map<string, string>;
@@ -83,21 +84,23 @@ function panel(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: 
 }
 
 function groupsPage(data: SheetData): HTMLCanvasElement {
-  const { canvas, g } = page(data, "Groups", "19 teams · Group A 9 + BYE · Group B 10");
+  const format = formatOfPlan(data.plan);
+  const { canvas, g } = page(data, "Groups", format.byePosition ? `${format.teams} teams · Group A ${format.groupTeams.A} + BYE · Group B ${format.groupTeams.B}` : `${format.teams} teams · two groups of ${format.groupTeams.A}`);
   const by = new Map(data.plan.result.assignments.map((a) => [slotCodeOf(a), a]));
   const nameOf = (code: string) => (code === BYE_CODE ? "BYE" : data.names.get(by.get(code)?.teamId ?? "") ?? code);
   const grounds = teamGroundSplit(data.matches.map((m) => ({ stage: m.stage, ground: m.ground, teamIds: [m.a.teamId, m.b.teamId] })));
   (["A", "B"] as const).forEach((group, column) => {
     const x = 70 + column * 560;
-    const rows = Object.entries(OPPONENT_TEMPLATE[group]);
-    const height = 96 + rows.length * 116 + (group === "A" ? 90 : 0);
+    const rows = Object.entries(format.opponents[group]);
+    const hasBye = Boolean(data.bye && format.byePosition?.startsWith(group));
+    const height = 96 + rows.length * 116 + (hasBye ? 90 : 0);
     panel(g, x, 290, 540, height);
     g.fillStyle = GOLD;
     g.font = `900 46px ${DISPLAY}`;
     g.fillText(`Group ${group}`, x + 28, 350);
     g.fillStyle = MUTED;
     g.font = `500 24px ${FONT}`;
-    g.fillText(group === "A" ? "9 teams + 1 BYE · 13 matches" : "10 teams · 15 matches", x + 28, 384);
+    g.fillText(`${format.groupTeams[group]} teams${hasBye ? " + 1 BYE" : ""} · ${format.leagueMatchesByGroup[group]} matches`, x + 28, 384);
     rows.forEach(([code, opponents], index) => {
       const y = 430 + index * 116;
       const a = by.get(code);
@@ -128,7 +131,7 @@ function groupsPage(data: SheetData): HTMLCanvasElement {
       g.fillStyle = "rgba(240,200,98,0.12)";
       g.fillRect(x + 28, y + 90, 484, 1);
     });
-    if (group === "A") {
+    if (hasBye && data.bye) {
       const y = 430 + rows.length * 116;
       g.fillStyle = "rgba(240,200,98,0.1)";
       g.beginPath();
@@ -136,7 +139,7 @@ function groupsPage(data: SheetData): HTMLCanvasElement {
       g.fill();
       g.fillStyle = GOLD;
       g.font = `800 24px ${FONT}`;
-      g.fillText("BYE · A9", x + 36, y + 28);
+      g.fillText(`BYE · ${format.byePosition}`, x + 36, y + 28);
       g.fillStyle = TEXT;
       g.font = `600 24px ${FONT}`;
       g.fillText(fit(g, `${data.bye.label} · 2 matches + 1 BYE`, 470), x + 36, y + 58);
@@ -144,7 +147,7 @@ function groupsPage(data: SheetData): HTMLCanvasElement {
   });
   g.fillStyle = MUTED;
   g.font = `500 22px ${FONT}`;
-  g.fillText("Every team plays 3 league fixtures. Only A9 has a BYE, a walkover worth 2 points.", 70, 1600);
+  g.fillText(format.byePosition ? `Every team plays 3 league fixtures. Only ${format.byePosition} has a BYE, a walkover worth 2 points.` : "Every team plays 3 league fixtures. There is no BYE.", 70, 1600);
   g.fillText("A×2 · B×1: league matches on Ground A and Ground B. Every team plays on both grounds.", 70, 1636);
   return canvas;
 }

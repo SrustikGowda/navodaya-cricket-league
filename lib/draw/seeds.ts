@@ -1,5 +1,6 @@
 import { DomainError } from "../errors";
-import { SEED_SPECS, TEAM_COUNT, type SeedSpec } from "./config";
+import { SEED_SPECS, type SeedSpec } from "./config";
+import { formatFor, supportedCountsText, SUPPORTED_TEAM_COUNTS } from "./formats";
 
 export type RosterTeam = {
   id: string;
@@ -59,18 +60,18 @@ function resolveOne(spec: SeedSpec, roster: RosterTeam[]): RosterTeam {
   );
 }
 
-/** Roster must contain exactly 19 distinct approved teams. */
+/** The roster must be distinct approved teams, and as many as one of the formats needs (19 or 20). */
 export function assertRoster(roster: RosterTeam[]): void {
   const ids = new Set(roster.map((team) => team.id));
   if (ids.size !== roster.length) {
     throw new DomainError("The approved roster lists a team more than once. Nothing was drawn.", 422, "roster_invalid");
   }
-  if (roster.length !== TEAM_COUNT) {
+  if (!formatFor(roster.length)) {
     throw new DomainError(
-      `The draw needs exactly ${TEAM_COUNT} approved teams, but ${roster.length} ${roster.length === 1 ? "is" : "are"} approved. Nothing was drawn.`,
+      `The draw needs ${supportedCountsText()} approved teams, but ${roster.length} ${roster.length === 1 ? "is" : "are"} approved. Nothing was drawn.`,
       422,
       "roster_count",
-      { count: roster.length, required: TEAM_COUNT },
+      { count: roster.length, required: [...SUPPORTED_TEAM_COUNTS] },
     );
   }
 }

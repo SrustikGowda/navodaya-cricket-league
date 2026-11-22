@@ -1,22 +1,12 @@
 import { DomainError } from "../errors";
-import {
-  BYE_CODE,
-  DEFAULT_TIMETABLE,
-  FIXTURE_ENTRIES,
-  LEAGUE_MATCHES,
-  OPPONENT_TEMPLATE,
-  OVERS,
-  SATURDAY_TEMPLATE,
-  SUNDAY_TEMPLATE,
-  type SlotPair,
-  type Timetable,
-} from "./config";
+import { BYE_CODE, DEFAULT_TIMETABLE, OVERS, type SlotPair, type Timetable } from "./config";
 import { istInstant, knockoutMatches } from "./bracket";
+import { FORMAT_19, formatFor, formatOfMatchCount, slotRows, type TournamentFormat } from "./formats";
 import type { ByeFixture, DrawResult, GroundCode, GroupCode, PlannedMatch } from "./types";
 
 /** Start minutes of each league slot of a day, with Saturday's inauguration break after `breakAfterSlots` slots. */
-export function leagueSlotStarts(day: 1 | 2, timetable: Timetable): number[] {
-  const rows = day === 1 ? SATURDAY_TEMPLATE.length : SUNDAY_TEMPLATE.length;
+export function leagueSlotStarts(day: 1 | 2, timetable: Timetable, format: TournamentFormat = FORMAT_19): number[] {
+  const rows = slotRows(format, day).length;
   let at = day === 1 ? timetable.saturdayStart : timetable.sundayStart;
   const starts: number[] = [];
   for (let index = 0; index < rows; index += 1) {
@@ -40,13 +30,13 @@ export type TimeSlot = {
   pair: SlotPair | null;
 };
 
-/** Where and when each of the 35 matches is played, for a set of times. The opponents come from the template, not from here. */
-export function timeSlots(timetable: Timetable = DEFAULT_TIMETABLE): TimeSlot[] {
+/** Where and when each match is played (35 with 19 teams, 37 with 20), for a set of times. The opponents come from the template, not from here. */
+export function timeSlots(timetable: Timetable = DEFAULT_TIMETABLE, format: TournamentFormat = FORMAT_19): TimeSlot[] {
   const slots: TimeSlot[] = [];
   let number = 0;
   for (const day of [1, 2] as const) {
-    const rows = day === 1 ? SATURDAY_TEMPLATE : SUNDAY_TEMPLATE;
-    const starts = leagueSlotStarts(day, timetable);
+    const rows = slotRows(format, day);
+    const starts = leagueSlotStarts(day, timetable, format);
     rows.forEach((row, slotIndex) => {
       row.forEach((pair, position) => {
         number += 1;
@@ -81,12 +71,12 @@ export function timeSlots(timetable: Timetable = DEFAULT_TIMETABLE): TimeSlot[] 
   return slots;
 }
 
-/** Every league pairing of the template, once, as position codes. 13 in Group A and 15 in Group B. */
-export function templatePairs(): { group: GroupCode; a: string; b: string }[] {
+/** Every league pairing of the template, once, as position codes. 13 in Group A and 15 in Group B with 19 teams; 15 and 15 with 20. */
+export function templatePairs(format: TournamentFormat = FORMAT_19): { group: GroupCode; a: string; b: string }[] {
   const pairs: { group: GroupCode; a: string; b: string }[] = [];
   for (const group of ["A", "B"] as const) {
     const seen = new Set<string>();
-    for (const [position, opponents] of Object.entries(OPPONENT_TEMPLATE[group])) {
+    for (const [position, opponents] of Object.entries(format.opponents[group])) {
       for (const opponent of opponents) {
         if (opponent === BYE_CODE) continue;
         const key = [position, opponent].sort().join("|");
@@ -100,20 +90,23 @@ export function templatePairs(): { group: GroupCode; a: string; b: string }[] {
 }
 
 /** The three league fixture entries of a position: its opponents, with "BYE" where it has the walkover. */
-export function opponentsOfPosition(position: string): readonly string[] {
+export function opponentsOfPosition(position: string, format: TournamentFormat = FORMAT_19): readonly string[] {
   const group = position.slice(0, 1) as GroupCode;
-  return OPPONENT_TEMPLATE[group]?.[position] ?? [];
+  return format.opponents[group]?.[position] ?? [];
 }
 
-export type BuiltSchedule = { matches: PlannedMatch[]; bye: ByeFixture };
+export type BuiltSchedule = { matches: PlannedMatch[]; bye: ByeFixture | null };
 
 export type ScheduleOptions = { days: [string, string]; timetable?: Timetable };
 
 /**
- * Builds the schedule from a finished group draw: the 28 league matches in NCL 2025's order, the seven knockouts
- * with qualification placeholders, and the BYE entry. There is no randomness here at all.
+ * Builds the schedule from a finished group draw: the league matches in the format's order of play (28 in NCL 2025's
+ * order with 19 teams, 30 with 20), the seven knockouts with qualification placeholders, and the BYE entry when
+ * there is one. There is no randomness here at all.
  */
 export function buildSchedule(result: DrawResult, names: Map<string, string>, options: ScheduleOptions): BuiltSchedule {
+  const format = formatFor(result.assignments.length);
+  if (!format) throw new DomainError("League fixtures could not be generated.", 500, "draw_internal");
   const timetable = options.timetable ?? DEFAULT_TIMETABLE;
   const [saturday, sunday] = options.days;
   const at = new Map(result.assignments.map((a) => [`${a.group}${a.slot}`, a]));
@@ -124,7 +117,7 @@ export function buildSchedule(result: DrawResult, names: Map<string, string>, op
   };
 
   const league: PlannedMatch[] = [];
-  for (const slot of timeSlots(timetable)) {
+  for (const slot of timeSlots(timetable, format)) {
     if (slot.stage !== "league" || !slot.pair) continue;
     const date = slot.day === 1 ? saturday : sunday;
     league.push({
@@ -144,12 +137,16 @@ export function buildSchedule(result: DrawResult, names: Map<string, string>, op
       teamB: side(slot.pair[1]),
     });
   }
-  if (league.length !== LEAGUE_MATCHES) throw new DomainError("League fixtures could not be generated.", 500, "draw_internal");
+  if (league.length !== format.leagueMatches) throw new DomainError("League fixtures could not be generated.", 500, "draw_internal");
 
   const matches = [...league, ...knockoutMatches(sunday, league.length + 1, timetable)];
-  const byeAssignment = at.get("A9");
-  if (!byeAssignment || byeAssignment.teamId !== result.byeTeamId) throw new DomainError("The BYE could not be placed.", 500, "draw_internal");
-  const bye: ByeFixture = { code: BYE_CODE, number: FIXTURE_ENTRIES, group: "A", slot: "A9", teamId: result.byeTeamId, label: names.get(result.byeTeamId) ?? result.byeTeamId };
+  if (!format.byePosition) {
+    if (result.byeTeamId !== null) throw new DomainError("The BYE could not be placed.", 500, "draw_internal");
+    return { matches, bye: null };
+  }
+  const byeAssignment = at.get(format.byePosition);
+  if (!byeAssignment || result.byeTeamId === null || byeAssignment.teamId !== result.byeTeamId) throw new DomainError("The BYE could not be placed.", 500, "draw_internal");
+  const bye: ByeFixture = { code: BYE_CODE, number: format.fixtureEntries, group: "A", slot: format.byePosition, teamId: result.byeTeamId, label: names.get(result.byeTeamId) ?? result.byeTeamId };
   return { matches, bye };
 }
 
@@ -158,7 +155,8 @@ export function buildSchedule(result: DrawResult, names: Map<string, string>, op
  * length, the break and the knockout times move.
  */
 export function applyTimetable(matches: PlannedMatch[], days: [string, string], timetable: Timetable): PlannedMatch[] {
-  const slots = new Map(timeSlots(timetable).map((slot) => [slot.code, slot]));
+  const format = formatOfMatchCount(matches.length) ?? FORMAT_19;
+  const slots = new Map(timeSlots(timetable, format).map((slot) => [slot.code, slot]));
   return matches.map((match) => {
     const slot = slots.get(match.code);
     if (!slot) return match;

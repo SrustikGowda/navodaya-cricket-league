@@ -1,4 +1,4 @@
-// Local development only: approves 18 sample teams so the Fixtures page can be tried end to end.
+// Local development only: approves 19 sample teams (or 20 with SEED_TEAM_COUNT=20) so the Fixtures page can be tried end to end.
 // Refuses to run against a hosted database or in production. Usage: PGLITE_DIR=.data/pglite npx tsx scripts/seed-roster.ts
 
 import { createDb, migrate } from "../lib/db";
@@ -15,7 +15,9 @@ const NAMES = [
   "4s-11 (2004–2011)", "RCB United", "Jnv Junglees", "Balehonnur Bulls (2005–12)", "Royal Challengers Balehonnur", "GTR",
   "The Elite", "TWENTY SIXers", "IX-ELEVENS", "Champions-11", "Balehonnur Blasters", "Navodaya Warriors", "Kalpavruksha XI",
   "Malnad Mavericks", "Sahyadri Strikers", "Tunga Titans", "Bhadra Blasters", "Hemavathi Hawks", "Spartans XI",
+  "Mullayanagiri XI",
 ];
+const COUNT = Number(process.env.SEED_TEAM_COUNT ?? 19) === 20 ? 20 : 19;
 
 async function main() {
   const db = await createDb();
@@ -27,7 +29,7 @@ async function main() {
   if ((have[0]?.n ?? 0) > 0) {
     console.log(`Already ${have[0]?.n} approved teams. Nothing added.`);
   } else {
-    for (const [index, name] of NAMES.entries()) {
+    for (const [index, name] of NAMES.slice(0, COUNT).entries()) {
       const owner = await upsertProfile(db, { email: `sample${index}@ncl.test`, displayName: `${name} captain` });
       await db.execute(
         `insert into registrations (season_id, captain_user_id, status, team_name, slug, batch_admission_year, batch_leaving_year,
@@ -38,7 +40,7 @@ async function main() {
     }
     // A sample entry fee so "mark fee paid" can be tried locally.
     await db.execute("update seasons set fee_paise = 400000 where year = 2026 and fee_paise is null");
-    console.log("Added 19 sample approved teams and a sample entry fee.");
+    console.log(`Added ${COUNT} sample approved teams and a sample entry fee.`);
   }
   await db.close();
 }

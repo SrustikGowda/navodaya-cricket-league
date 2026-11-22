@@ -2,15 +2,15 @@
 // team at least one league match on each ground. Which teams get two on Ground A is settled by the draw, because the
 // draw decides who takes which position.
 
-import { BYE_POSITION, SATURDAY_TEMPLATE, SUNDAY_TEMPLATE } from "./config";
+import { FORMAT_19, type TournamentFormat } from "./formats";
 import type { GroundCode, Stage } from "./types";
 
 export type GroundSplit = Record<GroundCode, number>;
 
 /** League matches on each ground for every position (A1 … B10), from the order of play. */
-export function positionGroundSplit(): Map<string, GroundSplit> {
+export function positionGroundSplit(format: TournamentFormat = FORMAT_19): Map<string, GroundSplit> {
   const split = new Map<string, GroundSplit>();
-  for (const row of [...SATURDAY_TEMPLATE, ...SUNDAY_TEMPLATE]) {
+  for (const row of [...format.saturday, ...format.sunday]) {
     row.forEach((pair, index) => {
       const ground: GroundCode = index === 0 ? "A" : "B";
       for (const position of pair) {
@@ -24,11 +24,11 @@ export function positionGroundSplit(): Map<string, GroundSplit> {
 }
 
 /** How many positions play two league matches on Ground A, and how many play two on Ground B. */
-export function groundShareCounts(): { twoOnA: number; twoOnB: number } {
+export function groundShareCounts(format: TournamentFormat = FORMAT_19): { twoOnA: number; twoOnB: number } {
   let twoOnA = 0;
   let twoOnB = 0;
-  for (const [position, split] of positionGroundSplit()) {
-    if (position === BYE_POSITION) continue;
+  for (const [position, split] of positionGroundSplit(format)) {
+    if (position === format.byePosition) continue;
     if (split.A > split.B) twoOnA += 1;
     else if (split.B > split.A) twoOnB += 1;
   }
@@ -36,9 +36,10 @@ export function groundShareCounts(): { twoOnA: number; twoOnB: number } {
 }
 
 /** One sentence for the Fixtures page and the rules. */
-export function groundShareText(): string {
-  const { twoOnA, twoOnB } = groundShareCounts();
-  return `Every team plays at least one league match on each ground: ${twoOnA} teams play two of their three on Ground A and ${twoOnB} play two on Ground B. The BYE team plays one on each. The draw decides which team gets which.`;
+export function groundShareText(format: TournamentFormat = FORMAT_19): string {
+  const { twoOnA, twoOnB } = groundShareCounts(format);
+  const bye = format.byePosition ? " The BYE team plays one on each." : "";
+  return `Every team plays at least one league match on each ground: ${twoOnA} teams play two of their three on Ground A and ${twoOnB} play two on Ground B.${bye} The draw decides which team gets which.`;
 }
 
 /** League matches on each ground for every team, from the scheduled matches, so it follows any rescheduling. */

@@ -8,6 +8,7 @@ import { bool, num, requiredStr, str, type Row } from "../rows";
 import { getActiveSeason, lockActiveSeason, type Season } from "../season";
 import type { Actor } from "../types";
 import { ALGORITHM, BYE_CODE, DEFAULT_TIMETABLE, GROUND_NAMES, REVEAL_LEAD_MS, type Timetable } from "./config";
+import { FORMAT_19, formatFor } from "./formats";
 import { syncEditionHistory } from "./history";
 import { generatePlan, planHash } from "./plan";
 import { resolveSeeds, type RosterTeam } from "./seeds";
@@ -282,7 +283,8 @@ export async function loadDecisions(db: Queryable, drawId: string): Promise<Orga
 
 export function qualificationFor(plan: DrawPlan, scores: MatchScore[], decisions: OrganizerDecision[]): Qualification {
   const teams = plan.result.assignments.map((a) => ({ teamId: a.teamId, group: a.group }));
-  return computeQualification(teams, scores, decisions, [plan.result.byeTeamId]);
+  const format = formatFor(plan.roster.length) ?? FORMAT_19;
+  return computeQualification(teams, scores, decisions, plan.result.byeTeamId ? [plan.result.byeTeamId] : [], format.leagueMatchesByGroup);
 }
 
 export async function loadQualification(db: Queryable, official: OfficialDrawView): Promise<Qualification> {
@@ -390,25 +392,28 @@ export async function runOfficialDraw(
       const versionId = (version[0] as { id: string }).id;
 
       const fixtureIds = new Map<string, string>();
-      // The BYE is a fixture entry for one team: completed on the spot, no ground, time or score.
-      const byeRows = await query.query<{ id: string }>(
-        `insert into fixtures (
-           season_id, schedule_version_id, match_number, stage, team_a_registration_id, team_a_label, team_b_label,
-           status, code, group_id, draw_id, sort_order, is_bye, winner_registration_id, winner_label, summary
-         ) values ($1,$2,$3,'league',$4,$5,'BYE','completed',$6,$7,$8,$3,true,$4,$5,$9) returning id`,
-        [
-          season.id,
-          versionId,
-          plan.bye.number,
-          plan.bye.teamId,
-          plan.bye.label,
-          BYE_CODE,
-          groupIds.get("A"),
-          drawId,
-          `BYE. ${plan.bye.label} are given a walkover and 2 points. It is not a match.`,
-        ],
-      );
-      fixtureIds.set(BYE_CODE, (byeRows[0] as { id: string }).id);
+      // With 19 teams the BYE is a fixture entry for one team: completed on the spot, no ground, time or score.
+      // With 20 teams there is no BYE and nothing to save here.
+      if (plan.bye) {
+        const byeRows = await query.query<{ id: string }>(
+          `insert into fixtures (
+             season_id, schedule_version_id, match_number, stage, team_a_registration_id, team_a_label, team_b_label,
+             status, code, group_id, draw_id, sort_order, is_bye, winner_registration_id, winner_label, summary
+           ) values ($1,$2,$3,'league',$4,$5,'BYE','completed',$6,$7,$8,$3,true,$4,$5,$9) returning id`,
+          [
+            season.id,
+            versionId,
+            plan.bye.number,
+            plan.bye.teamId,
+            plan.bye.label,
+            BYE_CODE,
+            groupIds.get("A"),
+            drawId,
+            `BYE. ${plan.bye.label} are given a walkover and 2 points. It is not a match.`,
+          ],
+        );
+        fixtureIds.set(BYE_CODE, (byeRows[0] as { id: string }).id);
+      }
       for (const match of plan.matches) {
         const rows = await query.query<{ id: string }>(
           `insert into fixtures (
@@ -452,7 +457,7 @@ export async function runOfficialDraw(
         ref,
         planHash: planHash(plan),
         matches: plan.matches.length,
-        byeTeam: plan.bye.label,
+        byeTeam: plan.bye?.label ?? null,
         teams: plan.roster.length,
       });
       await input.hooks?.beforeCommit?.();

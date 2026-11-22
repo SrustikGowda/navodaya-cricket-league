@@ -30,7 +30,7 @@ import {
 } from "../lib/draw/standings";
 import type { DrawPlan, GroupCode } from "../lib/draw/types";
 import { checkSchedule, timedMatches, validatePlan, validateTemplates } from "../lib/draw/validate";
-import { DAYS, TEAM_NAMES } from "./helpers/roster";
+import { DAYS, TEAM_NAMES, byeId } from "./helpers/roster";
 
 const roster: RosterTeam[] = TEAM_NAMES.map((name, index) => ({ id: `team-${String(index).padStart(2, "0")}`, name }));
 const idOf = (name: string) => (roster.find((team) => team.name === name) as RosterTeam).id;
@@ -167,7 +167,7 @@ function assertPlanPromises(plan: DrawPlan, label: string) {
   const byeHolder = plan.result.assignments.find((a) => a.group === "A" && a.slot === 9);
   assert.ok(byeHolder, `${label}: A9 is filled`);
   assert.ok(!SEED_IDS().includes(byeHolder?.teamId as string), `${label}: A9 is not a seeded team`);
-  assert.equal(plan.bye.teamId, byeHolder?.teamId);
+  assert.equal(byeId(plan), byeHolder?.teamId);
 
   // league
   assert.equal(league.length, 28);
@@ -187,8 +187,8 @@ function assertPlanPromises(plan: DrawPlan, label: string) {
   }
   for (const id of ids) {
     const matches = count.get(id) ?? 0;
-    assert.equal(matches + (id === plan.bye.teamId ? 1 : 0), 3, `${label}: three league entries`);
-    assert.equal(matches, id === plan.bye.teamId ? 2 : 3, `${label}: only the BYE team has two matches`);
+    assert.equal(matches + (id === byeId(plan) ? 1 : 0), 3, `${label}: three league entries`);
+    assert.equal(matches, id === byeId(plan) ? 2 : 3, `${label}: only the BYE team has two matches`);
   }
   assert.equal(league.filter((m) => m.day === 1).length, 20);
   assert.equal(league.filter((m) => m.day === 2).length, 8);
@@ -301,7 +301,7 @@ test("seeded teams are placed by construction, A9 is a fair draw among the 15 un
   const places = new Map<string, Set<string>>();
   for (let n = 0; n < draws; n += 1) {
     const plan = generatePlan({ roster, days: DAYS, entropy: entropyFor(100_000 + n) });
-    byeCount.set(plan.bye.teamId, (byeCount.get(plan.bye.teamId) ?? 0) + 1);
+    byeCount.set(byeId(plan), (byeCount.get(byeId(plan)) ?? 0) + 1);
     const runner = plan.result.assignments.find((a) => a.teamId === idOf("RCB United"));
     const champ = plan.result.assignments.find((a) => a.teamId === idOf("4s-11"));
     runnerAt.set(`${runner?.group}${runner?.slot}`, (runnerAt.get(`${runner?.group}${runner?.slot}`) ?? 0) + 1);
@@ -350,7 +350,7 @@ test("the same entropy replays the same draw, and the saved plan can be verified
   // The reveal is the saved allocation: seeds first, the BYE team last.
   assert.deepEqual(plan.result.reveal.map((s) => s.phase), ["seed", "seed", "seed", "seed", ...Array(14).fill("draw"), "bye"]);
   assert.equal(plan.result.reveal[0]?.teamId, idOf("4s-11"));
-  assert.equal(plan.result.reveal.at(-1)?.teamId, plan.bye.teamId);
+  assert.equal(plan.result.reveal.at(-1)?.teamId, byeId(plan));
 });
 
 test("random numbers are unbiased and the stream is deterministic", () => {
@@ -403,9 +403,9 @@ test("seeded teams are found by database id across historical spellings, or the 
   assert.equal(resolveSeeds(twins).championId, idOf("4s-11"));
 });
 
-test("exactly 19 approved teams are required, and a bad roster is refused before anything is drawn", () => {
+test("19 or 20 approved teams are required, and a bad roster is refused before anything is drawn", () => {
   assert.equal(TEAM_COUNT, 19);
-  for (const count of [0, 1, 17, 18, 20, 21]) {
+  for (const count of [0, 1, 17, 18, 21, 22]) {
     const base = count <= roster.length ? roster.slice(0, count) : [...roster, ...Array.from({ length: count - roster.length }, (_, i) => ({ id: `x-${i}`, name: `Extra ${i}` }))];
     assert.throws(() => generatePlan({ roster: base, days: DAYS }), (error: { code?: string }) => ["roster_count", "roster_invalid"].includes(error.code ?? ""), `count ${count}`);
   }
@@ -553,15 +553,15 @@ test("qualification takes the top four of each group, eight in all, and the brac
     const plan = generatePlan({ roster, days: DAYS, entropy: entropyFor(900 + n) });
     const teams = plan.result.assignments.map((a) => ({ teamId: a.teamId, group: a.group }));
     const scores = playLeague(plan, (slot) => (slot.startsWith("A") ? 10 - Number(slot.slice(1)) : 11 - Number(slot.slice(1))), n);
-    const q = computeQualification(teams, scores, [], [plan.bye.teamId]);
+    const q = computeQualification(teams, scores, [], [byeId(plan)]);
     assert.equal(q.leagueComplete, true);
     const decisions = q.blockingTies.map((tie) => ({ scope: tie.scope, order: [...tie.teamIds].sort() }));
-    const settled = computeQualification(teams, scores, decisions, [plan.bye.teamId]);
+    const settled = computeQualification(teams, scores, decisions, [byeId(plan)]);
     assert.ok(settled.qualifiers, `draw ${n}: qualifiers once any tie is decided`);
     const list = settled.qualifiers as Qualifier[];
     assert.equal(list.length, 8);
     for (const group of ["A", "B"] as const) assert.deepEqual(list.filter((x) => x.group === group).map((x) => x.rank).sort(), [1, 2, 3, 4]);
-    const bye = settled.groups.A.rows.find((row) => row.teamId === plan.bye.teamId) as StandingRow;
+    const bye = settled.groups.A.rows.find((row) => row.teamId === byeId(plan)) as StandingRow;
     assert.equal(bye.byes, 1);
     assert.equal(bye.played, 2, "the BYE team played two real matches");
     const rank = (group: GroupCode, r: number) => list.find((x) => x.group === group && x.rank === r)?.teamId;
@@ -582,7 +582,7 @@ test("nothing qualifies until all 28 league matches have a result", () => {
   const plan = generatePlan({ roster, days: DAYS, entropy: entropyFor(31) });
   const teams = plan.result.assignments.map((a) => ({ teamId: a.teamId, group: a.group }));
   const scores = playLeague(plan, () => 0, 3);
-  const partial = computeQualification(teams, scores.slice(0, LEAGUE_MATCHES - 1), [], [plan.bye.teamId]);
+  const partial = computeQualification(teams, scores.slice(0, LEAGUE_MATCHES - 1), [], [byeId(plan)]);
   assert.equal(partial.leagueComplete, false);
   assert.equal(partial.qualifiers, null);
   assert.ok(Object.values(partial.status).every((s) => s === "pending" || s === "qualified" || s === "eliminated"));

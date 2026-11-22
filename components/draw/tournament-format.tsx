@@ -1,4 +1,4 @@
-import { GROUP_TEAMS, LEAGUE_MATCHES_BY_GROUP, TEAM_COUNT } from "@/lib/draw/config";
+import { FORMAT_19, type TournamentFormat as Format } from "@/lib/draw/formats";
 
 function Trophy() {
   return (
@@ -22,12 +22,12 @@ function Arrow({ index }: { index: number }) {
  * The 2026 format at a glance, as real markup rather than a picture: 19 teams, two groups, the top four of each into
  * a knockout of eight. Reads left to right on wide screens and top to bottom on phones.
  */
-export function TournamentFormat({ compact = false }: { compact?: boolean }) {
+export function TournamentFormat({ compact = false, format = FORMAT_19 }: { compact?: boolean; format?: Format }) {
   return (
-    <figure className={compact ? "tf tf--compact" : "tf"} aria-label="Tournament format: 19 teams in two groups, the top four of each group reach the quarterfinals, then semifinals and the final">
+    <figure className={compact ? "tf tf--compact" : "tf"} aria-label={`Tournament format: ${format.teams} teams in two groups, the top four of each group reach the quarterfinals, then semifinals and the final`}>
       <div className="tf-flow">
         <div className="tf-node tf-node--teams" style={{ ["--i" as string]: 0 }}>
-          <b>{TEAM_COUNT}</b>
+          <b>{format.teams}</b>
           <span>teams</span>
         </div>
         <Arrow index={1} />
@@ -35,16 +35,16 @@ export function TournamentFormat({ compact = false }: { compact?: boolean }) {
           <div className="tf-node tf-node--group" style={{ ["--i" as string]: 2 }}>
             <h3>Group A</h3>
             <p>
-              <b>{GROUP_TEAMS.A}</b> teams <em>+ 1 BYE</em>
+              <b>{format.groupTeams.A}</b> teams {format.byePosition ? <em>+ 1 BYE</em> : null}
             </p>
-            <small>{LEAGUE_MATCHES_BY_GROUP.A} matches</small>
+            <small>{format.leagueMatchesByGroup.A} matches</small>
           </div>
           <div className="tf-node tf-node--group" style={{ ["--i" as string]: 3 }}>
             <h3>Group B</h3>
             <p>
-              <b>{GROUP_TEAMS.B}</b> teams
+              <b>{format.groupTeams.B}</b> teams
             </p>
-            <small>{LEAGUE_MATCHES_BY_GROUP.B} matches</small>
+            <small>{format.leagueMatchesByGroup.B} matches</small>
           </div>
         </div>
         <Arrow index={4} />
@@ -69,7 +69,10 @@ export function TournamentFormat({ compact = false }: { compact?: boolean }) {
           <span>Final</span>
         </div>
       </div>
-      <figcaption>Every team plays 3 league fixtures, with at least one on each ground. Group A has one BYE, a walkover worth 2 points.</figcaption>
+      <figcaption>
+        Every team plays 3 league fixtures, with at least one on each ground.
+        {format.byePosition ? " Group A has one BYE, a walkover worth 2 points." : " There is no BYE."}
+      </figcaption>
     </figure>
   );
 }

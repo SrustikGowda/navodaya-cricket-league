@@ -4,14 +4,15 @@ import { defineConfig, devices } from "@playwright/test";
 // test-only draw password, so it never touches the main e2e database.
 export default defineConfig({
   testDir: "e2e",
-  testMatch: "**/draw.spec.ts",
+  // draw.spec.ts runs with 19 sample teams; draw20.spec.ts needs E2E_TEAMS=20 and skips itself otherwise.
+  testMatch: process.env.E2E_TEAMS === "20" ? "**/draw20.spec.ts" : "**/draw.spec.ts",
   timeout: 120_000,
   expect: { timeout: 15_000 },
   fullyParallel: false,
   workers: 1,
   use: { baseURL: "http://127.0.0.1:3458" },
   webServer: {
-    command: "rm -rf .data/pglite-e2e-draw && npx tsx scripts/seed-roster.ts && npm run dev -- --port 3458",
+    command: `rm -rf .data/pglite-e2e-draw && SEED_TEAM_COUNT=${process.env.E2E_TEAMS === "20" ? 20 : 19} npx tsx scripts/seed-roster.ts && npm run dev -- --port 3458`,
     url: "http://127.0.0.1:3458/api/health",
     reuseExistingServer: false,
     timeout: 240_000,

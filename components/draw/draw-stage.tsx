@@ -2,7 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { playCue, setSoundEnabled } from "@/lib/draw/audio";
-import { BYE_POSITION, GROUP_TEAMS, OPPONENT_TEMPLATE } from "@/lib/draw/config";
+import { formatOfPlan } from "@/lib/draw/formats";
 import { beatIndexAt, buildTimeline, placedBefore, type Beat } from "@/lib/draw/timeline";
 import type { DrawPlan, GroupCode, PublicTeam, RevealStep, SeedRole } from "@/lib/draw/types";
 import { buildViewMatches, DAY_LABEL, slotCodeOf, timeText, type ViewMatch } from "@/lib/draw/view";
@@ -18,7 +18,6 @@ const SEED_TAG: Record<SeedRole, string> = {
   semifinalist: "Semifinalist · NCL 2025",
 };
 const SEED_SHORT: Record<SeedRole, string> = { champion: "Champion", runner_up: "Runner-up", semifinalist: "Semifinalist" };
-const TEAM_TOTAL = 19;
 
 type Props = {
   plan: DrawPlan;
@@ -41,6 +40,9 @@ export function DrawStage({ plan, mode, teams, drawRef, revealAt, countdown, onC
   const closeRef = useRef<HTMLButtonElement>(null);
   const timeline = useMemo(() => buildTimeline(plan, { reduced, countdown: live && countdown }), [plan, reduced, countdown, live]);
   const names = useMemo(() => new Map(plan.roster.map((team) => [team.id, team.name])), [plan]);
+  const format = formatOfPlan(plan);
+  const TEAM_TOTAL = format.teams;
+  const openPlaces = format.teams - 4 - (format.byePosition ? 1 : 0);
   const logos = useMemo(() => new Map(teams.map((team) => [team.id, team.logoUrl])), [teams]);
   const matches = useMemo(() => buildViewMatches(plan), [plan]);
   // Beat zero is the countdown when there is one, so the timeline starts that long before the reveal moment.
@@ -206,7 +208,7 @@ export function DrawStage({ plan, mode, teams, drawRef, revealAt, countdown, onC
         ? `${names.get(beat.step.teamId)} placed at ${beat.step.group}${beat.step.slot}. ${placed.length} of ${TEAM_TOTAL} teams assigned.`
         : `Drawn: ${names.get(beat.step.teamId)}.`
       : beat.kind === "bye"
-        ? `${names.get(beat.step.teamId)} receives the BYE at ${BYE_POSITION}: two matches and one BYE.`
+        ? `${names.get(beat.step.teamId)} receives the BYE at ${format.byePosition}: two matches and one BYE.`
         : beat.kind === "done"
           ? trial
             ? "Trial draw complete. Not official."
@@ -274,7 +276,7 @@ export function DrawStage({ plan, mode, teams, drawRef, revealAt, countdown, onC
 
       <main className="dr-stage-main">
         {beat.kind === "countdown" ? <Countdown remaining={remaining} /> : null}
-        {beat.kind === "opening" ? <Opening trial={trial} waiting={waiting} onStart={() => { setStarted(true); setPlaying(true); }} /> : null}
+        {beat.kind === "opening" ? <Opening trial={trial} waiting={waiting} teams={TEAM_TOTAL} onStart={() => { setStarted(true); setPlaying(true); }} /> : null}
 
         {boardsVisible ? (
           <Boards
@@ -290,19 +292,19 @@ export function DrawStage({ plan, mode, teams, drawRef, revealAt, countdown, onC
 
         {beat.kind === "seeds-intro" ? (
           <Caption kicker="Seeded first" title="The four NCL 2025 semifinalists" ms={beat.dur}>
-            The champions and the runners-up go to <b>different groups</b>, at random. The other two semifinalists go <b>one to each group</b>, at random. No seeded team can receive the BYE.
+            The champions and the runners-up go to <b>different groups</b>, at random. The other two semifinalists go <b>one to each group</b>, at random.{format.byePosition ? " No seeded team can receive the BYE." : ""}
           </Caption>
         ) : null}
         {beat.kind === "draw-intro" ? (
-          <Caption kicker="Random draw" title="14 teams. 14 open places." ms={beat.dur}>
+          <Caption kicker="Random draw" title={`${openPlaces} teams. ${openPlaces} open places.`} ms={beat.dur}>
             Drawn by the server and saved before you see it. Your screen only shows the result.
           </Caption>
         ) : null}
         {beat.kind === "place" ? <FlyCard key={beat.step.order} beat={beat} beatStart={beatStart} names={names} logos={logos} rootRef={rootRef} reduced={reduced} total={plan.result.reveal.length} /> : null}
-        {beat.kind === "bye" ? <ByeReveal key="bye" beat={beat} names={names} logos={logos} /> : null}
+        {beat.kind === "bye" ? <ByeReveal key="bye" beat={beat} names={names} logos={logos} position={format.byePosition} /> : null}
         {beat.kind === "groups" ? (
-          <Caption kicker="All 19 assigned" title="The groups are set" compact ms={beat.dur}>
-            Group A: 9 teams and the BYE. Group B: 10 teams. Next: who plays whom.
+          <Caption kicker={`All ${TEAM_TOTAL} assigned`} title="The groups are set" compact ms={beat.dur}>
+            {format.byePosition ? `Group A: ${format.groupTeams.A} teams and the BYE. Group B: ${format.groupTeams.B} teams.` : `Group A: ${format.groupTeams.A} teams. Group B: ${format.groupTeams.B} teams.`} Next: who plays whom.
           </Caption>
         ) : null}
 
@@ -326,14 +328,14 @@ function Countdown({ remaining }: { remaining: number }) {
   );
 }
 
-function Opening({ trial, waiting, onStart }: { trial: boolean; waiting: boolean; onStart: () => void }) {
+function Opening({ trial, waiting, teams, onStart }: { trial: boolean; waiting: boolean; teams: number; onStart: () => void }) {
   return (
     <div className={waiting ? "dr-opening dr-opening--wait" : "dr-opening"}>
       <div className="dr-opening-rule" aria-hidden="true" />
       <p>Navodaya Cricket League</p>
       <h2>NCL 2026</h2>
       <h3>{trial ? "Trial run · not official" : "Official group draw"}</h3>
-      <small className="dr-opening-meta">19 teams · 2 groups</small>
+      <small className="dr-opening-meta">{teams} teams · 2 groups</small>
       <div className="dr-opening-rule" aria-hidden="true" />
       {waiting ? (
         <button type="button" className="dr-btn dr-btn--gold dr-btn--xl dr-opening-start" onClick={onStart}>
@@ -372,6 +374,7 @@ function Boards({
   target: string | null;
   final: boolean;
 }) {
+  const format = formatOfPlan(plan);
   return (
     <div className={final ? "dr-boards dr-boards--two dr-boards--final" : "dr-boards dr-boards--two"}>
       {(["A", "B"] as GroupCode[]).map((group, boardIndex) => (
@@ -379,14 +382,14 @@ function Boards({
           <h3>
             <span>Group</span>
             {group}
-            <small>{group === "A" ? "9 teams + BYE" : "10 teams"}</small>
+            <small>{format.groupTeams[group]} teams{format.byePosition?.startsWith(group) ? " + BYE" : ""}</small>
           </h3>
           <ul className="dr-board-list" aria-label={`Group ${group} positions`}>
-            {Array.from({ length: GROUP_TEAMS[group] }, (_, n) => n + 1).map((slot) => {
+            {Array.from({ length: format.groupTeams[group] }, (_, n) => n + 1).map((slot) => {
               const code = `${group}${slot}`;
               const step = placed.get(code);
               const name = step ? names.get(step.teamId) ?? "" : "";
-              const isBye = code === BYE_POSITION;
+              const isBye = code === format.byePosition;
               const classes = ["dr-slot-row", step ? "is-filled" : "", step?.seed ? "is-seed" : "", isBye ? "is-bye" : "", justSeated === code ? "is-new" : "", target === code ? "is-target" : ""].filter(Boolean).join(" ");
               return (
                 <li className={classes} key={code} data-slot={code} data-seed={step?.seed ?? undefined}>
@@ -411,7 +414,7 @@ function Boards({
       ))}
       {final && plan.bye ? (
         <p className="dr-boards-note">
-          <b>BYE · {BYE_POSITION}</b> {names.get(plan.bye.teamId)}: 2 matches + 1 BYE. The only BYE in the tournament.
+          <b>BYE · {format.byePosition}</b> {names.get(plan.bye.teamId)}: 2 matches + 1 BYE. The only BYE in the tournament.
         </p>
       ) : null}
     </div>
@@ -488,11 +491,11 @@ function FlyCard({
 }
 
 /** The BYE: its own moment, because it is the only one and it matters. */
-function ByeReveal({ beat, names, logos }: { beat: Extract<Beat, { kind: "bye" }>; names: Map<string, string>; logos: Map<string, string | null> }) {
+function ByeReveal({ beat, names, logos, position }: { beat: Extract<Beat, { kind: "bye" }>; names: Map<string, string>; logos: Map<string, string | null>; position: string | null }) {
   const name = names.get(beat.step.teamId) ?? "";
   return (
     <div className="dr-bye">
-      <span className="dr-bye-kicker">The BYE · {BYE_POSITION}</span>
+      <span className="dr-bye-kicker">The BYE · {position}</span>
       <div className="dr-bye-team">
         <TeamMark name={name} logoUrl={logos.get(beat.step.teamId)} size={72} />
         <b>{name}</b>
@@ -510,19 +513,21 @@ function FixtureCreation({ group, plan, names, matches, reduced }: { group: Grou
   const nameOf = (code: string) => (code === "BYE" ? "BYE" : names.get(by.get(code)?.teamId ?? "") ?? code);
   const opener = matches.find((m) => m.number === 1);
   const own = matches.filter((m) => m.stage === "league" && m.group === group).length;
+  const format = formatOfPlan(plan);
+  const hasBye = Boolean(format.byePosition?.startsWith(group));
   return (
     <div className="dr-fixcreate dr-fixcreate--web">
       <div className="dr-fixcreate-head">
         <span>League fixtures</span>
         <b>Group {group}</b>
         <small>
-          {own} matches{group === "A" ? " + the BYE" : ""} · every team has 3 fixtures
+          {own} matches{hasBye ? " + the BYE" : ""} · every team has 3 fixtures
         </small>
       </div>
       <div className="dr-fixweb">
-        <OpponentWeb group={group} seeds={seeds} opener={group === "A" && opener ? ["A1", "A2"] : undefined} animate={!reduced} />
+        <OpponentWeb group={group} format={format} seeds={seeds} opener={group === "A" && opener ? ["A1", "A2"] : undefined} animate={!reduced} />
         <ul className="dr-fixweb-list">
-          {Object.entries(OPPONENT_TEMPLATE[group]).map(([code, opponents], i) => (
+          {Object.entries(format.opponents[group]).map(([code, opponents], i) => (
             <li key={code} style={{ ["--i" as string]: i }} className={code === "A1" ? "is-opener" : undefined}>
               <i>{code}</i>
               <b>{nameOf(code)}</b>
@@ -536,7 +541,7 @@ function FixtureCreation({ group, plan, names, matches, reduced }: { group: Grou
           Opening match · <b>{opener.a.label}</b> v <b>{opener.b.label}</b> · {DAY_LABEL[opener.day]} {timeText(opener.startMinutes)} · {opener.groundName}
         </p>
       ) : (
-        <p className="dr-fixweb-open">Group B is a ring: each team plays its two neighbours and the team five places away.</p>
+        <p className="dr-fixweb-open">Group {group} is a ring: each team plays its two neighbours and the team five places away.</p>
       )}
     </div>
   );
@@ -640,6 +645,7 @@ function Finished({
 }) {
   const trial = mode === "trial";
   const opener = matches.find((m) => m.number === 1);
+  const format = formatOfPlan(plan);
   return (
     <div className="dr-finished">
       <div className={trial ? "dr-finish-head dr-finish-head--trial" : "dr-finish-head"}>
@@ -649,7 +655,7 @@ function Finished({
           <small>
             {trial
               ? "Nothing was saved or published. Run it again as often as you like."
-              : `Saved and published${drawRef ? ` as ${drawRef}` : ""}. 28 league matches, the BYE and 7 knockouts. Everyone visiting the Fixtures page now sees this draw.`}
+              : `Saved and published${drawRef ? ` as ${drawRef}` : ""}. ${format.leagueMatches} league matches, ${format.byePosition ? "the BYE and " : ""}7 knockouts. Everyone visiting the Fixtures page now sees this draw.`}
           </small>
         </div>
       </div>
