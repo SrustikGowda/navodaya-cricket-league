@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { track } from "@/components/analytics-tracker";
 import type { DrawBoard } from "@/lib/draw/board";
+import { formatToShow } from "@/lib/draw/formats";
 import { buildTimeline } from "@/lib/draw/timeline";
 import type { DrawPlan } from "@/lib/draw/types";
 import { formatIst } from "@/lib/format";
@@ -28,7 +29,7 @@ export function DrawStudio({
   initialBoard: DrawBoard;
   isOrganizer: boolean;
   passwordConfigured: boolean;
-  readiness: { ready: boolean; message: string | null };
+  readiness: { ready: boolean; message: string | null; teamCount: number };
   initial: InitialView;
   /** The "how it works" block (server-rendered). Placed by state: after the draw buttons before the draw, after the fixtures once published. */
   about: React.ReactNode;
@@ -362,7 +363,7 @@ export function DrawStudio({
         {children ? <div className="dr-draw-foot">{children}</div> : null}
       </section>
       {trialPanel}
-      <HowFixturesWork />
+      <HowFixturesWork format={formatToShow(readiness.teamCount)} />
       {overlays}
     </>
   );

@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { track } from "@/components/analytics-tracker";
 import { compareBatch } from "@/lib/batch-order";
-import { BYE_RULES, KNOCKOUT_TIE_RULE, LEAGUE_MATCHES, QUALIFICATION_RULES, TIE_BREAKERS, type Timetable } from "@/lib/draw/config";
+import { BYE_RULES, KNOCKOUT_TIE_RULE, QUALIFICATION_RULES, TIE_BREAKERS, type Timetable } from "@/lib/draw/config";
+import { formatOfPlan } from "@/lib/draw/formats";
 import { groundShareText, teamGroundSplit, type GroundSplit } from "@/lib/draw/grounds";
 import { renderShareCard } from "@/lib/draw/share-image";
 import type { Qualification } from "@/lib/draw/standings";
@@ -90,6 +91,7 @@ export function ScheduleViews({
   const official = kind === "official";
   const matches = useMemo(() => buildViewMatches(plan, fixtures), [plan, fixtures]);
   const bye = useMemo(() => buildViewBye(plan, fixtures), [plan, fixtures]);
+  const drawFormat = formatOfPlan(plan);
   const names = useMemo(() => teamNames(plan), [plan]);
   // From the live fixtures, so a match moved to the other ground shows straight away.
   const grounds = useMemo(() => teamGroundSplit(matches.map((m) => ({ stage: m.stage, ground: m.ground, teamIds: [m.a.teamId, m.b.teamId] }))), [matches]);
@@ -274,7 +276,7 @@ export function ScheduleViews({
                 </label>
               </div>
             ) : null}
-            <Timetable matches={listed} day={day} timetable={timetable ?? plan.timetable} onTeam={openTeam} highlightTeam={filters.team || null} linkable={official} bye={filters.team === bye.teamId ? bye : null} />
+            <Timetable matches={listed} day={day} timetable={timetable ?? plan.timetable} onTeam={openTeam} highlightTeam={filters.team || null} linkable={official} bye={bye && filters.team === bye.teamId ? bye : null} />
           </>
         ) : null}
         {tab === "groupA" ? <GroupPanel group="A" plan={plan} matches={matches} grounds={grounds} onTeam={openTeam} linkable={official} /> : null}
@@ -291,7 +293,7 @@ export function ScheduleViews({
       </div>
 
       <details className="dr-rules dr-rules--page">
-        <summary>Points, qualification and the BYE</summary>
+        <summary>Points, qualification{drawFormat.byePosition ? " and the BYE" : ""}</summary>
         <p className="dr-rules-h">Points and ranking</p>
         <ol>
           {TIE_BREAKERS.map((rule) => (
@@ -304,20 +306,24 @@ export function ScheduleViews({
             <li key={rule}>{rule}</li>
           ))}
         </ul>
-        <p className="dr-rules-h">The BYE</p>
-        <ul>
-          {BYE_RULES.map((rule) => (
-            <li key={rule}>{rule}</li>
-          ))}
-        </ul>
+        {drawFormat.byePosition ? (
+          <>
+            <p className="dr-rules-h">The BYE</p>
+            <ul>
+              {BYE_RULES.map((rule) => (
+                <li key={rule}>{rule}</li>
+              ))}
+            </ul>
+          </>
+        ) : null}
         <p className="dr-rules-h">Grounds</p>
-        <p>{groundShareText()}</p>
+        <p>{groundShareText(drawFormat)}</p>
         <p className="dr-rules-h">Tied knockout matches</p>
         <p>{KNOCKOUT_TIE_RULE}</p>
         <p className="dr-rules-link">
           <a href="/2026/rules">Read the full tournament rules →</a>
         </p>
-        <p className="dr-rules-foot">{LEAGUE_MATCHES} league matches, 4 quarterfinals, 2 semifinals and the final: 35 matches. Only league matches are 6 overs a side; the quarterfinals, semifinals and the final are 8.</p>
+        <p className="dr-rules-foot">{drawFormat.leagueMatches} league matches, 4 quarterfinals, 2 semifinals and the final: {drawFormat.actualMatches} matches. Only league matches are 6 overs a side; the quarterfinals, semifinals and the final are 8.</p>
       </details>
     </div>
   );
@@ -429,7 +435,7 @@ function TeamPanel({
   kind: "official" | "trial";
   plan: DrawPlan;
   matches: ViewMatch[];
-  bye: ViewBye;
+  bye: ViewBye | null;
   grounds: Map<string, GroundSplit>;
   teamId: string;
   setTeam: (id: string) => void;
@@ -517,7 +523,7 @@ function TeamPanel({
   }
 
   if (!teamId || !assignment) return <p className="dr-empty">Choose a team.</p>;
-  const hasBye = bye.teamId === teamId;
+  const hasBye = bye !== null && bye.teamId === teamId;
   const share = grounds.get(teamId);
   return (
     <div className="dr-team">

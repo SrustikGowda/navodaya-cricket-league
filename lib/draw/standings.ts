@@ -250,6 +250,8 @@ export type QualificationStatus = "qualified" | "eliminated" | "pending";
 export type Qualification = {
   groups: Record<GroupCode, RankedTable>;
   leagueMatchesPlayed: number;
+  /** League matches in the whole tournament: 28 with 19 teams, 30 with 20. */
+  leagueMatchesTotal: number;
   leagueComplete: boolean;
   groupComplete: Record<GroupCode, boolean>;
   /** The top four of each group, ranked 1-4 inside the group. Null until the league is complete and ties are settled. */
@@ -306,7 +308,8 @@ export function computeQualification(
       );
     }
   }
-  return { groups, leagueMatchesPlayed, leagueComplete, groupComplete, qualifiers, blockers, blockingTies, status };
+  const leagueMatchesTotal = GROUP_CODES.reduce((sum, group) => sum + matchesPerGroup[group], 0);
+  return { groups, leagueMatchesPlayed, leagueMatchesTotal, leagueComplete, groupComplete, qualifiers, blockers, blockingTies, status };
 }
 
 export { pairQuarterfinals };

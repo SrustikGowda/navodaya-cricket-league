@@ -102,7 +102,9 @@ export function buildViewMatches(plan: DrawPlan, live?: LiveFixture[]): ViewMatc
   });
 }
 
-export function buildViewBye(plan: DrawPlan, live?: LiveFixture[]): ViewBye {
+/** The walkover as the page shows it, or null in the 20-team format, which has none. */
+export function buildViewBye(plan: DrawPlan, live?: LiveFixture[]): ViewBye | null {
+  if (!plan.bye) return null;
   const row = (live ?? []).find((fixture) => fixture.isBye);
   return { ...plan.bye, fixtureId: row?.id ?? null, status: row?.status ?? "completed", points: 2 };
 }
@@ -111,9 +113,9 @@ export function buildViewBye(plan: DrawPlan, live?: LiveFixture[]): ViewBye {
 export type TeamEntry = { kind: "match"; match: ViewMatch } | { kind: "bye"; bye: ViewBye };
 
 /** A team's league fixture entries in playing order. Always three; the BYE team's third is the BYE, listed last. */
-export function teamEntries(matches: ViewMatch[], bye: ViewBye, teamId: string): TeamEntry[] {
+export function teamEntries(matches: ViewMatch[], bye: ViewBye | null, teamId: string): TeamEntry[] {
   const own: TeamEntry[] = leagueMatchesOf(matches, teamId).map((match) => ({ kind: "match", match }));
-  return bye.teamId === teamId ? [...own, { kind: "bye", bye }] : own;
+  return bye && bye.teamId === teamId ? [...own, { kind: "bye", bye }] : own;
 }
 
 export function stageText(match: Pick<ViewMatch, "stage" | "group" | "code">): string {

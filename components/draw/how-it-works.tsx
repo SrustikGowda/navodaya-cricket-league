@@ -1,17 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { BYE_CODE, GROUP_TEAMS, LEAGUE_MATCHES_BY_GROUP, OPPONENT_TEMPLATE } from "@/lib/draw/config";
+import { BYE_CODE } from "@/lib/draw/config";
+import { FORMAT_19, type TournamentFormat } from "@/lib/draw/formats";
 import { groundShareText, positionGroundSplit } from "@/lib/draw/grounds";
 import { OpponentWeb } from "./group-views";
 
-const GROUNDS = positionGroundSplit();
 
-function sentence(code: string): string {
-  const [first, second, third] = OPPONENT_TEMPLATE[code.startsWith("A") ? "A" : "B"][code] ?? [];
+function sentence(code: string, format: TournamentFormat): string {
+  const [first, second, third] = format.opponents[code.startsWith("A") ? "A" : "B"][code] ?? [];
   const list = [first, second, third].filter(Boolean).map((position) => (position === BYE_CODE ? "a BYE" : position));
   const text = list.length === 3 ? `${list[0]}, ${list[1]} and ${list[2]}` : list.join(", ");
-  const split = GROUNDS.get(code);
+  const split = positionGroundSplit(format).get(code);
   const grounds = split ? ` ${split.A} on Ground A, ${split.B} on Ground B.` : "";
   return `${code} plays ${text}.${grounds}${code === "A1" ? " A1 v A2 is the opening match." : ""}`;
 }
@@ -20,7 +20,7 @@ function sentence(code: string): string {
  * The idea of the draw before it happens, using only positions. Teams are drawn into positions; every position then
  * plays the same three fixed opponents. The lines draw themselves when the section scrolls into view.
  */
-export function HowFixturesWork() {
+export function HowFixturesWork({ format = FORMAT_19 }: { format?: TournamentFormat }) {
   const [focus, setFocus] = useState<string>("A1");
   const [seen, setSeen] = useState(false);
   const ref = useRef<HTMLElement>(null);
@@ -61,21 +61,21 @@ export function HowFixturesWork() {
               <figcaption>
                 <b>Group {group}</b>
                 <span>
-                  {GROUP_TEAMS[group]} teams{group === "A" ? " + 1 BYE" : ""} · {LEAGUE_MATCHES_BY_GROUP[group]} matches
+                  {format.groupTeams[group]} teams{format.byePosition?.startsWith(group) ? " + 1 BYE" : ""} · {format.leagueMatchesByGroup[group]} matches
                 </span>
               </figcaption>
-              <OpponentWeb group={group} opener={group === "A" ? ["A1", "A2"] : undefined} focus={active} animate={seen} hold={!seen} onPick={pick} />
+              <OpponentWeb group={group} format={format} opener={group === "A" ? ["A1", "A2"] : undefined} focus={active} animate={seen} hold={!seen} onPick={pick} />
               <p className="dr-how-line" aria-live="polite">
-                {active ? sentence(active) : "Tap a position to see its three opponents."}
+                {active ? sentence(active, format) : "Tap a position to see its three opponents."}
               </p>
             </figure>
           );
         })}
       </div>
       <p className="dr-how-foot">
-        Each line is one match. The dashed green line is the BYE, a walkover worth 2 points that one team in Group A receives. The brighter line is the opening match, A1 v A2.
+        Each line is one match. {format.byePosition ? "The dashed green line is the BYE, a walkover worth 2 points that one team in Group A receives. " : ""}The brighter line is the opening match, A1 v A2.
       </p>
-      <p className="dr-how-foot">{groundShareText()}</p>
+      <p className="dr-how-foot">{groundShareText(format)}</p>
     </section>
   );
 }

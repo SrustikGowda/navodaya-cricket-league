@@ -11,7 +11,7 @@ export const GROUP_CODES: readonly GroupCode[] = ["A", "B"];
 
 export type TeamRef = { id: string; name: string };
 
-/** One of the 19 positions: A1..A9 and B1..B10. A9 is the position that carries the BYE. */
+/** One position of a group: A1..A9 and B1..B10 with 19 teams (A9 carries the BYE), A1..A10 and B1..B10 with 20. */
 export type SlotAssignment = {
   group: GroupCode;
   slot: number;
@@ -20,7 +20,7 @@ export type SlotAssignment = {
 };
 
 export type RevealStep = {
-  /** 1-based position in the reveal sequence. The four seeded teams come first, the BYE team last. */
+  /** 1-based position in the reveal sequence. The four seeded teams come first, then the draw, and the BYE team last when there is one. */
   order: number;
   phase: "seed" | "draw" | "bye";
   teamId: string;
@@ -32,8 +32,8 @@ export type RevealStep = {
 export type DrawResult = {
   assignments: SlotAssignment[];
   reveal: RevealStep[];
-  /** The one team whose third league fixture is a BYE (position A9). */
-  byeTeamId: string;
+  /** The one team whose third league fixture is a BYE (position A9), or null in the 20-team format, which has no BYE. */
+  byeTeamId: string | null;
   /** The team at A2, who plays the team at A1 in the opening match. */
   openingOpponentId: string;
 };
@@ -49,7 +49,7 @@ export type MatchSide = {
 };
 
 export type PlannedMatch = {
-  /** Stable identifier inside a schedule: M01..M28, QF1..QF4, SF1, SF2, F. */
+  /** Stable identifier inside a schedule: M01..M28 (M01..M30 with 20 teams), QF1..QF4, SF1, SF2, F. */
   code: string;
   number: number;
   stage: Stage;
@@ -85,7 +85,8 @@ export type DrawPlan = {
   seeds: { championId: string; runnerUpId: string; semifinalistIds: [string, string] };
   result: DrawResult;
   matches: PlannedMatch[];
-  bye: ByeFixture;
+  /** The walkover, or null in the 20-team format. */
+  bye: ByeFixture | null;
   /** The times the plan was built with. Later changes by organizers are kept on the draw, not in this record. */
   timetable: Timetable;
   /** Plain-language warnings about the schedule, such as short knockout rest. Never silent failures. */

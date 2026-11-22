@@ -5,7 +5,8 @@ import { createHash } from "node:crypto";
 import { writeAudit } from "./audit";
 import type { Db, Queryable } from "./db";
 import { DEFAULT_TIMETABLE } from "./draw/config";
-import { getOfficialDraw } from "./draw/service";
+import { formatOfPlan, formatToShow } from "./draw/formats";
+import { drawReadiness, getOfficialDraw } from "./draw/service";
 import { DomainError } from "./errors";
 import { formatEventDates, formatInrFromPaise } from "./format";
 import { buildRulebook, type Rule, type RuleSection, type RuleTable, type Rulebook } from "./rules";
@@ -183,6 +184,8 @@ export function countRules(content: RulebookContent): number {
 export async function standardRulebook(db: Queryable, season: Season): Promise<Rulebook> {
   // Times follow the official draw once it is published, including any rescheduling by the organizers.
   const official = await getOfficialDraw(db);
+  // The format follows the draw once it exists, and the number of approved teams until then: 19 or 20.
+  const format = official ? formatOfPlan(official.plan) : formatToShow((await drawReadiness(db)).teamCount);
   const organizer = season.organizerCredit?.replace(/^organi[sz]ed by\s+/i, "").trim() || null;
   return buildRulebook({
     editionNumber: season.editionNumber,
@@ -196,6 +199,7 @@ export async function standardRulebook(db: Queryable, season: Season): Promise<R
     fee: season.feePaise != null && season.feePaise > 0 ? formatInrFromPaise(season.feePaise) : null,
     ball: season.ballType,
     timetable: official?.timetable ?? DEFAULT_TIMETABLE,
+    format,
   });
 }
 

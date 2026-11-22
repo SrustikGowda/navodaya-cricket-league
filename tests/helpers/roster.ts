@@ -81,3 +81,12 @@ export async function counts(db: Db): Promise<Record<string, number>> {
 }
 
 export const DAYS: [string, string] = ["2026-11-28", "2026-11-29"];
+
+/** The 20 teams of the no-BYE format: the 19 above and one more. */
+export const TEAM_NAMES_20 = [...TEAM_NAMES, "Mullayanagiri XI"];
+
+/** The BYE team of a 19-team draw. Fails the test if the plan has none. */
+export function byeId(plan: { bye: { teamId: string } | null }): string {
+  if (!plan.bye) throw new Error("This plan has no BYE.");
+  return plan.bye.teamId;
+}

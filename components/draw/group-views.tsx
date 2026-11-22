@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { BYE_CODE, BYE_POSITION, GROUP_TEAMS, LEAGUE_MATCHES_BY_GROUP, OPPONENT_TEMPLATE } from "@/lib/draw/config";
+import { BYE_CODE } from "@/lib/draw/config";
+import { FORMAT_19, formatOfPlan, type TournamentFormat } from "@/lib/draw/formats";
 import type { GroundSplit } from "@/lib/draw/grounds";
 import type { DrawPlan, GroupCode, PublicTeam, SeedRole } from "@/lib/draw/types";
 import { SEED_TEXT, slotCodeOf, teamNames, type ViewMatch } from "@/lib/draw/view";
@@ -16,10 +17,10 @@ const RADIUS = 118;
 const SEED_BADGE: Record<SeedRole, string> = { champion: "Champion", runner_up: "Runner-up", semifinalist: "Semifinalist" };
 
 /** Every pairing of a group, once, as two position codes. The BYE is a pairing with the virtual "BYE" entry. */
-export function groupEdges(group: GroupCode): [string, string][] {
+export function groupEdges(group: GroupCode, format: TournamentFormat = FORMAT_19): [string, string][] {
   const seen = new Set<string>();
   const edges: [string, string][] = [];
-  for (const [position, opponents] of Object.entries(OPPONENT_TEMPLATE[group])) {
+  for (const [position, opponents] of Object.entries(format.opponents[group])) {
     for (const opponent of opponents) {
       const key = [position, opponent].sort().join("|");
       if (seen.has(key)) continue;
@@ -36,6 +37,7 @@ export function groupEdges(group: GroupCode): [string, string][] {
  */
 export function OpponentWeb({
   group,
+  format = FORMAT_19,
   seeds,
   opener,
   focus,
@@ -44,6 +46,8 @@ export function OpponentWeb({
   onPick,
 }: {
   group: GroupCode;
+  /** The tournament format. Defaults to the 19-team one. */
+  format?: TournamentFormat;
   /** Position code (A1) to its seed role. */
   seeds?: Record<string, SeedRole>;
   /** Position codes of the opening match, drawn brighter. */
@@ -55,13 +59,14 @@ export function OpponentWeb({
   hold?: boolean;
   onPick?: (position: string) => void;
 }) {
-  const codes = useMemo(() => [...Object.keys(OPPONENT_TEMPLATE[group]), ...(group === "A" ? [BYE_CODE] : [])], [group]);
+  const hasBye = Boolean(format.byePosition?.startsWith(group));
+  const codes = useMemo(() => [...Object.keys(format.opponents[group]), ...(hasBye ? [BYE_CODE] : [])], [format, group, hasBye]);
   const point = (code: string) => {
     const index = codes.indexOf(code);
     const angle = -Math.PI / 2 + (index * 2 * Math.PI) / codes.length;
     return { x: CENTER + RADIUS * Math.cos(angle), y: CENTER + RADIUS * Math.sin(angle) };
   };
-  const edges = groupEdges(group);
+  const edges = groupEdges(group, format);
   const mine = focus ? new Set(edges.filter(([a, b]) => a === focus || b === focus).flatMap(([a, b]) => [a, b])) : null;
   return (
     <svg className={animate ? "gw gw--draw" : hold ? "gw gw--hold" : "gw"} viewBox={`0 0 ${SIZE} ${SIZE}`} role="img" aria-label={`Who plays whom in Group ${group}. Every position has three fixtures.`}>
@@ -116,6 +121,7 @@ export function GroupCards({
   onGroup: (group: GroupCode) => void;
 }) {
   const names = teamNames(plan);
+  const format = formatOfPlan(plan);
   return (
     <div className="gc-wrap">
       <div className="gc-grid">
@@ -127,7 +133,7 @@ export function GroupCards({
                 <div>
                   <h3>Group {group}</h3>
                   <p>
-                    {GROUP_TEAMS[group]} teams{group === "A" ? " + 1 BYE" : ""} · {LEAGUE_MATCHES_BY_GROUP[group]} matches
+                    {format.groupTeams[group]} teams{format.byePosition?.startsWith(group) ? " + 1 BYE" : ""} · {format.leagueMatchesByGroup[group]} matches
                   </p>
                 </div>
                 <button type="button" className="dr-chipbtn" onClick={() => onGroup(group)}>
@@ -137,7 +143,7 @@ export function GroupCards({
               <ol>
                 {members.map((a) => {
                   const name = names.get(a.teamId) ?? a.teamId;
-                  const isBye = a.teamId === plan.bye.teamId;
+                  const isBye = plan.bye !== null && a.teamId === plan.bye.teamId;
                   return (
                     <li key={a.teamId} className={[a.seed ? "is-seed" : "", isBye ? "is-bye" : ""].filter(Boolean).join(" ")}>
                       <i className="dr-slot-tag">{slotCodeOf(a)}</i>
@@ -154,15 +160,15 @@ export function GroupCards({
                   );
                 })}
               </ol>
-              {group === "A" ? (
+              {plan.bye && format.byePosition?.startsWith(group) ? (
                 <p className="gc-bye">
-                  <b>BYE · {BYE_POSITION}</b>
+                  <b>BYE · {format.byePosition}</b>
                   <span>
                     {names.get(plan.bye.teamId)} · 2 matches + 1 BYE. The only BYE in the tournament.
                   </span>
                 </p>
               ) : (
-                <p className="gc-bye gc-bye--none">No BYE · every team plays 3 matches</p>
+                <p className="gc-bye gc-bye--none">{plan.bye ? "No BYE · every team plays 3 matches" : "Every team plays 3 matches"}</p>
               )}
             </section>
           );
@@ -190,6 +196,8 @@ export function GroupPanel({
   linkable: boolean;
 }) {
   const names = teamNames(plan);
+  const format = formatOfPlan(plan);
+  const hasBye = Boolean(format.byePosition?.startsWith(group));
   const [focus, setFocus] = useState<string | null>(null);
   const bySlot = new Map(plan.result.assignments.map((a) => [slotCodeOf(a), a]));
   const seeds: Record<string, SeedRole> = {};
@@ -201,13 +209,13 @@ export function GroupPanel({
     <div className="gp">
       <div className="gp-top">
         <div className="gp-web">
-          <OpponentWeb group={group} seeds={seeds} opener={opener} focus={focus} onPick={(code) => setFocus((current) => (current === code ? null : code))} />
+          <OpponentWeb group={group} format={format} seeds={seeds} opener={opener} focus={focus} onPick={(code) => setFocus((current) => (current === code ? null : code))} />
           <p className="gp-legend">
-            Each line is one match. {group === "A" ? "The dashed line is the BYE. " : ""}Tap a position to see its three fixtures.
+            Each line is one match. {hasBye ? "The dashed line is the BYE. " : ""}Tap a position to see its three fixtures.
           </p>
         </div>
         <ul className="gp-opp" aria-label={`Opponents in Group ${group}`}>
-          {Object.entries(OPPONENT_TEMPLATE[group]).map(([code, opponents]) => {
+          {Object.entries(format.opponents[group]).map(([code, opponents]) => {
             const a = bySlot.get(code);
             return (
               <li key={code} className={focus === code ? "is-focus" : undefined} onMouseEnter={() => setFocus(code)} onMouseLeave={() => setFocus(null)}>

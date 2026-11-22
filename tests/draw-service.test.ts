@@ -9,6 +9,7 @@ import { confirmStandings, parseScoreEntry, recordMatchScore, recordTiebreak, re
 import { moveMatch, previewReschedule, rescheduleOfficialDraw } from "../lib/draw/timetable";
 import {
   authorizeDrawPassword,
+  drawReadiness,
   getOfficialDraw,
   liveFixtures,
   loadQualification,
@@ -21,7 +22,7 @@ import {
 import { listPublicFixtures } from "../lib/public-data";
 import { getActiveSeason } from "../lib/season";
 import type { Actor } from "../lib/types";
-import { captain, counts, DAYS, freshDb, organizer, seedRoster, TEAM_NAMES } from "./helpers/roster";
+import { captain, counts, DAYS, freshDb, organizer, seedRoster, TEAM_NAMES, TEAM_NAMES_20, byeId } from "./helpers/roster";
 
 const PASSWORD = "unit-test-draw-password";
 let ipCounter = 0;
@@ -64,7 +65,7 @@ test("a trial run uses the real roster and writes nothing, however often it is r
     assert.equal(plan.roster.length, 19);
     assert.deepEqual([...plan.roster.map((team) => team.name)].sort(), [...TEAM_NAMES].sort());
     assert.equal(plan.matches.length, 35);
-    assert.ok(plan.bye.teamId);
+    assert.ok(byeId(plan));
     hashes.add(planHash(plan));
   }
   assert.ok(hashes.size > 1, "each trial is a fresh random draw");
@@ -173,7 +174,7 @@ test("the real run saves groups, memberships, 36 fixture entries (35 matches and
   assert.equal(byeRows.length, 1, "exactly one BYE");
   const a9 = draw.plan.result.assignments.find((a) => a.group === "A" && a.slot === 9);
   assert.equal(byeRows[0]?.team_a_registration_id, a9?.teamId);
-  assert.equal(byeRows[0]?.team_a_registration_id, draw.plan.bye.teamId);
+  assert.equal(byeRows[0]?.team_a_registration_id, byeId(draw.plan));
   assert.deepEqual([byeRows[0]?.team_b_registration_id, byeRows[0]?.starts_at, byeRows[0]?.ground_id], [null, null, null]);
   assert.equal(byeRows[0]?.status, "completed");
   assert.equal(byeRows[0]?.match_number, 36);
@@ -481,7 +482,7 @@ test("level teams stop the bracket until organizers decide; each decision is rec
   assert.equal(state.blockingTies.length, 2, "one tie to settle in each group");
   assert.ok(state.blockers.every((b) => /Organizer decision required/.test(b)));
   const a = state.groups.A.rows;
-  assert.equal(a[0]?.teamId, draw.plan.bye.teamId, "the BYE team's two points lift it above teams that tied every match");
+  assert.equal(a[0]?.teamId, byeId(draw.plan), "the BYE team's two points lift it above teams that tied every match");
   assert.deepEqual([a[0]?.points, a[0]?.played, a[0]?.byes], [4, 2, 1]);
   assert.equal(a[1]?.points, 3);
   await assert.rejects(() => confirmStandings(db, admin), (e) => codeOf(e) === "tie_unresolved");
@@ -570,4 +571,69 @@ test("the draw password is read only from the environment and never appears in s
   const service = readFileSync(path.join(root, "lib/draw/service.ts"), "utf8");
   assert.match(service, /process\.env\[PASSWORD_ENV\]/);
   assert.match(service, /NCL_FIXTURE_RUN_PASSWORD/);
+});
+
+test("with 20 approved teams the real run publishes 30 league matches and 7 knockouts with no BYE, and the league runs to the quarterfinals", async () => {
+  const db = await freshDb();
+  const admin = await organizer(db);
+  const teams = await seedRoster(db, TEAM_NAMES_20);
+  assert.equal(teams.length, 20);
+
+  const readiness = await drawReadiness(db);
+  assert.deepEqual([readiness.ready, readiness.teamCount, readiness.message], [true, 20, null]);
+  const trial = await previewTrial(db);
+  assert.equal(trial.roster.length, 20);
+  assert.equal(trial.bye, null);
+  assert.equal((await counts(db)).fixtures, 0, "a trial writes nothing");
+
+  const { draw } = await runOfficialDraw(db, admin, { requestId: nextRequest() });
+  assert.equal(draw.plan.matches.length, 37);
+  assert.equal(draw.plan.bye, null);
+  assert.equal(draw.plan.result.byeTeamId, null);
+  const c = await counts(db);
+  assert.equal(c.group_memberships, 20);
+  assert.equal(c.fixtures, 37, "37 matches and no BYE entry");
+  assert.equal((await db.query("select 1 from fixtures where is_bye")).length, 0, "no fixture is a BYE");
+  assert.equal(verifyPlan(draw.plan, DAYS).ok, true, "the saved entropy replays to the saved draw");
+  const audit = await db.query<{ payload: { teams: number; matches: number; byeTeam: string | null } }>("select payload from audit_events where action = 'draw.published'");
+  assert.deepEqual([audit[0]?.payload.teams, audit[0]?.payload.matches, audit[0]?.payload.byeTeam], [20, 37, null]);
+
+  const fixtures = await listPublicFixtures(db);
+  assert.equal(fixtures.length, 37);
+  const league = fixtures.filter((f) => f.stage === "league").sort((a, b) => (a.matchNumber as number) - (b.matchNumber as number));
+  assert.equal(league.length, 30);
+  const at = (slot: string) => draw.plan.result.assignments.find((a) => `${a.group}${a.slot}` === slot)?.teamId;
+  assert.deepEqual([league[0]?.teamAId, league[0]?.teamBId], [at("A1"), at("A2")], "the opening match is A1 v A2");
+  for (const team of teams) {
+    assert.equal(league.filter((f) => f.teamAId === team.id || f.teamBId === team.id).length, 3, `${team.name} plays three league matches`);
+  }
+  assert.equal(fixtures.find((f) => f.code === "QF1")?.durationMinutes, 75);
+  assert.equal(fixtures.find((f) => f.code === "F")?.code, "F");
+
+  // Results: 29 in leave the bracket waiting, the 30th completes the league, an organizer confirms, eight teams go through.
+  for (const [index, fixture] of league.slice(0, 29).entries()) await recordMatchScore(db, admin, fixture.id, parseScoreEntry(scoreFor(index)));
+  const midway = await loadQualification(db, draw);
+  assert.deepEqual([midway.leagueMatchesPlayed, midway.leagueMatchesTotal, midway.leagueComplete], [29, 30, false]);
+  await assert.rejects(() => confirmStandings(db, admin), (e) => codeOf(e) === "league_incomplete");
+  await recordMatchScore(db, admin, (league[29] as (typeof league)[number]).id, parseScoreEntry(scoreFor(29)));
+  await settleTies(db, admin, draw);
+  const done = await loadQualification(db, draw);
+  assert.equal(done.leagueComplete, true);
+  assert.equal(done.qualifiers?.length, 8);
+  assert.equal((await confirmStandings(db, admin)).bracketResolved, true);
+  const qfs = (await listPublicFixtures(db)).filter((f) => f.stage === "quarterfinal");
+  assert.equal(new Set(qfs.flatMap((f) => [f.teamAId, f.teamBId])).size, 8);
+  const rank = (group: "A" | "B", r: number) => done.qualifiers?.find((q) => q.group === group && q.rank === r)?.teamId;
+  assert.deepEqual([qfs.find((f) => f.code === "QF1")?.teamAId, qfs.find((f) => f.code === "QF1")?.teamBId], [rank("A", 1), rank("B", 4)]);
+  await db.close();
+});
+
+test("the same database runs either format: 19 approved teams still publish 36 entries with the BYE", async () => {
+  const { db, admin } = await setup();
+  assert.equal((await drawReadiness(db)).teamCount, 19);
+  const { draw } = await runOfficialDraw(db, admin, { requestId: nextRequest() });
+  assert.equal(draw.plan.matches.length, 35);
+  assert.equal((await counts(db)).fixtures, 36);
+  assert.equal((await db.query("select 1 from fixtures where is_bye")).length, 1);
+  await db.close();
 });

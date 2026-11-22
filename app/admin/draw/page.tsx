@@ -3,6 +3,7 @@ import { getActor } from "@/lib/auth";
 import { compareBatch } from "@/lib/batch-order";
 import { getDb } from "@/lib/db";
 import { loadBoard } from "@/lib/draw/board";
+import { formatOfPlan } from "@/lib/draw/formats";
 import { drawPasswordConfigured } from "@/lib/draw/service";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +28,7 @@ export default async function DrawAdminPage() {
       fixtures={board.fixtures}
       ties={ties}
       leagueResults={board.qualification?.leagueMatchesPlayed ?? 0}
+      leagueTotal={board.qualification?.leagueMatchesTotal ?? (official ? formatOfPlan(official.plan).leagueMatches : 0)}
       roster={[...(official?.plan.roster ?? [])].sort((a, b) => compareBatch(batchKey(a), batchKey(b)))}
       passwordConfigured={drawPasswordConfigured()}
       timetable={official?.timetable ?? null}

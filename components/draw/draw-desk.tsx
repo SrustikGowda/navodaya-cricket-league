@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { LEAGUE_MATCHES, type Timetable } from "@/lib/draw/config";
+import type { Timetable } from "@/lib/draw/config";
 import { oversText, parseOvers, type TieNote } from "@/lib/draw/standings";
 import type { LiveFixture } from "@/lib/draw/types";
 import { isoToMinutes, timeText } from "@/lib/draw/view";
@@ -15,6 +15,8 @@ type Props = {
   fixtures: LiveFixture[];
   ties: (TieNote & { names: Record<string, string> })[];
   leagueResults: number;
+  /** League matches in the tournament: 28 with 19 teams, 30 with 20. */
+  leagueTotal: number;
   roster: { id: string; name: string }[];
   passwordConfigured: boolean;
   timetable: Timetable | null;
@@ -24,7 +26,7 @@ type Props = {
   leagueComplete: boolean;
 };
 
-export function DrawDesk({ official, fixtures, ties, leagueResults, roster, passwordConfigured, timetable, confirmedAt, canConfirm, leagueComplete }: Props) {
+export function DrawDesk({ official, fixtures, ties, leagueResults, leagueTotal, roster, passwordConfigured, timetable, confirmedAt, canConfirm, leagueComplete }: Props) {
   if (!official) {
     return (
       <div className="stack">
@@ -43,10 +45,10 @@ export function DrawDesk({ official, fixtures, ties, leagueResults, roster, pass
           <strong>Official draw {official.ref}</strong> published {new Date(official.publishedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST.
         </p>
         <p className="quiet">Plan hash {official.planHash.slice(0, 16)}… · draw entropy {official.seed.slice(0, 12)}… (published so anyone can replay the draw).</p>
-        <p className="quiet">League results entered: {leagueResults} of {LEAGUE_MATCHES}. The quarterfinals are filled only after you confirm the final standings below.</p>
+        <p className="quiet">League results entered: {leagueResults} of {leagueTotal}. The quarterfinals are filled only after you confirm the final standings below.</p>
       </section>
 
-      <StandingsConfirm leagueComplete={leagueComplete} canConfirm={canConfirm} confirmedAt={confirmedAt} tiesWaiting={ties.length} />
+      <StandingsConfirm leagueTotal={leagueTotal} leagueComplete={leagueComplete} canConfirm={canConfirm} confirmedAt={confirmedAt} tiesWaiting={ties.length} />
 
       {ties.length > 0 ? (
         <section className="stack">
@@ -274,13 +276,13 @@ function KnockoutRow({ fixture, roster }: { fixture: LiveFixture; roster: { id: 
 }
 
 /** Confirming the final group standings is what lets the quarterfinals fill in. Nothing fills in by itself. */
-function StandingsConfirm({ leagueComplete, canConfirm, confirmedAt, tiesWaiting }: { leagueComplete: boolean; canConfirm: boolean; confirmedAt: string | null; tiesWaiting: number }) {
+function StandingsConfirm({ leagueTotal, leagueComplete, canConfirm, confirmedAt, tiesWaiting }: { leagueTotal: number; leagueComplete: boolean; canConfirm: boolean; confirmedAt: string | null; tiesWaiting: number }) {
   const form = useAdminPost();
   return (
     <section className="stack" id="confirm">
       <h2>Confirm the final standings</h2>
       {!leagueComplete ? (
-        <p className="quiet">Available once all {LEAGUE_MATCHES} league matches have a result. The top 4 of each group will then go into the quarterfinals.</p>
+        <p className="quiet">Available once all {leagueTotal} league matches have a result. The top 4 of each group will then go into the quarterfinals.</p>
       ) : tiesWaiting > 0 ? (
         <p className="alert" role="alert">Record a decision for each tie below first.</p>
       ) : (

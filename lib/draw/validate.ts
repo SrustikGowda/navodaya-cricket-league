@@ -1,24 +1,15 @@
 import {
-  ACTUAL_MATCHES,
   BYE_CODE,
-  BYE_POSITION,
   DAYLIGHT_END_MINUTES,
   EARLIEST_START_MINUTES,
-  FIXTURE_ENTRIES,
-  GROUP_TEAMS,
-  LEAGUE_MATCHES,
-  LEAGUE_MATCHES_BY_GROUP,
   MIN_KNOCKOUT_REST_MINUTES,
   MIN_LEAGUE_REST_MINUTES,
   MIN_QUALIFICATION_WINDOW_MINUTES,
-  OPPONENT_TEMPLATE,
   OVERS,
   QUALIFIERS_PER_GROUP,
-  SATURDAY_TEMPLATE,
-  SUNDAY_TEMPLATE,
-  TEAM_COUNT,
 } from "./config";
 import { QF_PAIRINGS, SF_PAIRINGS } from "./bracket";
+import { FORMAT_19, formatFor, type TournamentFormat } from "./formats";
 import { positionGroundSplit, teamGroundSplit } from "./grounds";
 import { templatePairs } from "./schedule";
 import type { DrawPlan, GroundCode, GroupCode, PlannedMatch, Stage } from "./types";
@@ -26,16 +17,18 @@ import type { DrawPlan, GroundCode, GroupCode, PlannedMatch, Stage } from "./typ
 export type PlanReport = { errors: string[]; notes: string[]; minLeagueRestMinutes: number };
 
 /**
- * Checks the fixed templates themselves: opponents are mutual, every team has three entries, the BYE is A9 only,
- * and the two-day order plays each pairing exactly once. Runs in the tests and before every draw.
+ * Checks a format's fixed templates: opponents are mutual, every team has three entries, the BYE (if the format has
+ * one) is at its one position only, and the two-day order plays each pairing exactly once with a slot of rest between
+ * any team's matches. Runs in the tests and before every draw.
  */
-export function validateTemplates(): string[] {
+export function validateTemplates(format: TournamentFormat = FORMAT_19): string[] {
   const errors: string[] = [];
   const fail = (message: string) => errors.push(message);
+  const byePosition = format.byePosition;
   for (const group of ["A", "B"] as const) {
-    const table = OPPONENT_TEMPLATE[group];
+    const table = format.opponents[group];
     const positions = Object.keys(table);
-    const expected = GROUP_TEAMS[group];
+    const expected = format.groupTeams[group];
     if (positions.length !== expected) fail(`Group ${group} must list ${expected} positions.`);
     for (const [position, opponents] of Object.entries(table)) {
       if (opponents.length !== 3) fail(`${position} must have exactly three league entries.`);
@@ -43,7 +36,7 @@ export function validateTemplates(): string[] {
       if (opponents.includes(position)) fail(`${position} plays itself.`);
       for (const opponent of opponents) {
         if (opponent === "BYE") {
-          if (position !== BYE_POSITION) fail(`Only ${BYE_POSITION} may have the BYE, not ${position}.`);
+          if (position !== byePosition) fail(byePosition ? `Only ${byePosition} may have the BYE, not ${position}.` : `This format has no BYE, but ${position} has one.`);
           continue;
         }
         if (!opponent.startsWith(group)) fail(`${position} meets ${opponent}, which is in another group.`);
@@ -52,18 +45,25 @@ export function validateTemplates(): string[] {
       }
     }
   }
-  const byes = Object.values(OPPONENT_TEMPLATE).flatMap((table) => Object.values(table)).filter((list) => list.includes("BYE")).length;
-  if (byes !== 1) fail(`There must be exactly one BYE, found ${byes}.`);
+  const byes = Object.values(format.opponents).flatMap((table) => Object.values(table)).filter((list) => list.includes("BYE")).length;
+  if (byes !== (byePosition ? 1 : 0)) fail(`There must be ${byePosition ? "exactly one BYE" : "no BYE"}, found ${byes}.`);
 
-  const pairs = templatePairs();
+  const pairs = templatePairs(format);
   for (const group of ["A", "B"] as const) {
     const count = pairs.filter((pair) => pair.group === group).length;
-    if (count !== LEAGUE_MATCHES_BY_GROUP[group]) fail(`Group ${group} must have ${LEAGUE_MATCHES_BY_GROUP[group]} matches, found ${count}.`);
+    if (count !== format.leagueMatchesByGroup[group]) fail(`Group ${group} must have ${format.leagueMatchesByGroup[group]} matches, found ${count}.`);
   }
 
-  // The two days play each pairing exactly once, with no team twice in one slot.
+  // The two days play each pairing exactly once, with no team twice in one slot or in two slots in a row.
   const played = new Map<string, number>();
-  const rows = [...SATURDAY_TEMPLATE.map((row) => ({ row, day: 1 })), ...SUNDAY_TEMPLATE.map((row) => ({ row, day: 2 }))];
+  const rows = [...format.saturday.map((row) => ({ row, day: 1 })), ...format.sunday.map((row) => ({ row, day: 2 }))];
+  for (const day of [1, 2] as const) {
+    const slots = day === 1 ? format.saturday : format.sunday;
+    slots.forEach((row, index) => {
+      const before = new Set((slots[index - 1] ?? []).flat());
+      for (const position of row.flat()) if (before.has(position)) fail(`${position} plays two slots in a row on day ${day}: it needs a slot of rest.`);
+    });
+  }
   for (const { row, day } of rows) {
     const inSlot = row.flat();
     if (new Set(inSlot).size !== inSlot.length) fail(`A position plays twice in one slot on day ${day}.`);
@@ -78,17 +78,17 @@ export function validateTemplates(): string[] {
     if (played.get(key) !== 1) fail(`${pair.a} v ${pair.b} is played ${played.get(key) ?? 0} times in the order of play.`);
   }
   if (played.size !== pairs.length) fail("The order of play contains a pairing that is not in the opponent template.");
-  const sat = SATURDAY_TEMPLATE.length * 2;
-  const sun = SUNDAY_TEMPLATE.length * 2;
-  if (sat !== 20) fail(`Saturday must have 20 league matches, found ${sat}.`);
+  const sat = format.saturday.length * 2;
+  const sun = format.sunday.length * 2;
   if (sun !== 8) fail(`Sunday must have 8 league matches, found ${sun}.`);
-  if (sat + sun !== LEAGUE_MATCHES) fail(`There must be ${LEAGUE_MATCHES} league matches.`);
-  const first = SATURDAY_TEMPLATE[0]?.[0];
+  if (sat !== format.leagueMatches - 8) fail(`Saturday must have ${format.leagueMatches - 8} league matches, found ${sat}.`);
+  if (sat + sun !== format.leagueMatches) fail(`There must be ${format.leagueMatches} league matches.`);
+  const first = format.saturday[0]?.[0];
   if (!first || first[0] !== "A1" || first[1] !== "A2") fail("The first match must be A1 v A2 on Ground A.");
 
   // Ground A is shared out: every position plays at least one league match on each ground, the BYE position one on each.
-  for (const [position, split] of positionGroundSplit()) {
-    if (position === BYE_POSITION ? split.A !== 1 || split.B !== 1 : split.A < 1 || split.B < 1) {
+  for (const [position, split] of positionGroundSplit(format)) {
+    if (position === byePosition ? split.A !== 1 || split.B !== 1 : split.A < 1 || split.B < 1) {
       fail(`${position} plays ${split.A} league matches on Ground A and ${split.B} on Ground B. Every team must play on both grounds.`);
     }
   }
@@ -219,18 +219,25 @@ export function validatePlan(plan: DrawPlan): PlanReport {
   const fail = (message: string) => errors.push(message);
   const { result, matches } = plan;
   const rosterIds = new Set(plan.roster.map((team) => team.id));
-  for (const message of validateTemplates()) fail(`Template: ${message}`);
+  const format = formatFor(plan.roster.length);
+  if (!format) {
+    fail(`Roster must be 19 or 20 distinct teams, found ${plan.roster.length}.`);
+    return { errors, notes: [], minLeagueRestMinutes: 0 };
+  }
+  const TEAM_COUNT = format.teams;
+  for (const message of validateTemplates(format)) fail(`Template: ${message}`);
 
   // Roster and groups
-  if (plan.roster.length !== TEAM_COUNT || rosterIds.size !== TEAM_COUNT) fail(`Roster must be exactly ${TEAM_COUNT} distinct teams.`);
+  if (rosterIds.size !== TEAM_COUNT) fail(`Roster must be exactly ${TEAM_COUNT} distinct teams.`);
   const placed = result.assignments.map((a) => a.teamId);
   if (placed.length !== TEAM_COUNT || new Set(placed).size !== TEAM_COUNT) fail("Every team must appear exactly once in the group allocation.");
   for (const id of placed) if (!rosterIds.has(id)) fail(`Allocated team ${id} is not on the roster.`);
   for (const group of ["A", "B"] as const) {
     const members = result.assignments.filter((a) => a.group === group);
-    if (members.length !== GROUP_TEAMS[group]) fail(`Group ${group} must have ${GROUP_TEAMS[group]} real teams.`);
+    const size = format.groupTeams[group];
+    if (members.length !== size) fail(`Group ${group} must have ${size} real teams.`);
     const slots = members.map((a) => a.slot).sort((x, y) => x - y);
-    if (slots.join() !== Array.from({ length: GROUP_TEAMS[group] }, (_, i) => i + 1).join()) fail(`Group ${group} must fill positions ${group}1-${group}${GROUP_TEAMS[group]} once each.`);
+    if (slots.join() !== Array.from({ length: size }, (_, i) => i + 1).join()) fail(`Group ${group} must fill positions ${group}1-${group}${size} once each.`);
   }
 
   // Seeded rules
@@ -247,35 +254,40 @@ export function validatePlan(plan: DrawPlan): PlanReport {
     if (champion.group === runnerUp.group) fail("Champion and runner-up must be in different groups.");
     if (semiOne.group === semiTwo.group) fail("The two other semifinalists must be in different groups.");
     for (const seed of [champion, runnerUp, semiOne, semiTwo]) {
-      if (seed.group === "A" && seed.slot === 9) fail("A seeded team cannot be at A9.");
+      if (format.byePosition && `${seed.group}${seed.slot}` === format.byePosition) fail(`A seeded team cannot be at ${format.byePosition}.`);
     }
     const inGroup = (group: GroupCode) => [champion, runnerUp, semiOne, semiTwo].filter((a) => a.group === group).length;
     if (inGroup("A") !== 2 || inGroup("B") !== 2) fail("Each group must start with exactly two seeded teams.");
   }
 
-  // BYE
-  const nine = result.assignments.find((a) => a.group === "A" && a.slot === 9);
-  if (!nine || nine.teamId !== result.byeTeamId) fail("A9 must hold the BYE team.");
-  if (nine?.seed) fail("The BYE team must not be a seeded team.");
-  if (plan.bye.teamId !== result.byeTeamId || plan.bye.slot !== BYE_POSITION || plan.bye.code !== BYE_CODE) fail("The BYE entry must belong to the A9 team.");
+  // BYE: one team at the BYE position with 19 teams, none at all with 20.
+  const byePosition = format.byePosition;
+  if (byePosition) {
+    const holder = result.assignments.find((a) => `${a.group}${a.slot}` === byePosition);
+    if (!holder || holder.teamId !== result.byeTeamId) fail(`${byePosition} must hold the BYE team.`);
+    if (holder?.seed) fail("The BYE team must not be a seeded team.");
+    if (!plan.bye || plan.bye.teamId !== result.byeTeamId || plan.bye.slot !== byePosition || plan.bye.code !== BYE_CODE) fail(`The BYE entry must belong to the ${byePosition} team.`);
+  } else if (result.byeTeamId !== null || plan.bye !== null) {
+    fail("With this many teams there is no BYE.");
+  }
 
-  // Reveal covers every team once: seeds, draw, then the BYE.
+  // Reveal covers every team once: seeds, draw, then the BYE when there is one.
   if (result.reveal.length !== TEAM_COUNT || new Set(result.reveal.map((r) => r.teamId)).size !== TEAM_COUNT) fail("The reveal sequence must list each team once.");
   result.reveal.forEach((step, index) => {
     const a = where(step.teamId);
     if (!a || a.group !== step.group || a.slot !== step.slot) fail(`Reveal step ${index + 1} disagrees with the allocation.`);
-    const expected = index < 4 ? "seed" : index === TEAM_COUNT - 1 ? "bye" : "draw";
+    const expected = index < 4 ? "seed" : byePosition && index === TEAM_COUNT - 1 ? "bye" : "draw";
     if (step.phase !== expected) fail(`Reveal step ${index + 1} must be a ${expected} step.`);
   });
   if (result.reveal[0]?.teamId !== championId) fail("The defending champion must be revealed first.");
-  if (result.reveal[TEAM_COUNT - 1]?.teamId !== result.byeTeamId) fail("The BYE team must be revealed last.");
+  if (byePosition && result.reveal[TEAM_COUNT - 1]?.teamId !== result.byeTeamId) fail("The BYE team must be revealed last.");
 
   // League fixtures
   const league = matches.filter((m) => m.stage === "league");
-  if (league.length !== LEAGUE_MATCHES) fail(`Expected ${LEAGUE_MATCHES} league fixtures, found ${league.length}.`);
+  if (league.length !== format.leagueMatches) fail(`Expected ${format.leagueMatches} league fixtures, found ${league.length}.`);
   for (const group of ["A", "B"] as const) {
     const count = league.filter((m) => m.group === group).length;
-    if (count !== LEAGUE_MATCHES_BY_GROUP[group]) fail(`Group ${group} must have ${LEAGUE_MATCHES_BY_GROUP[group]} league matches, found ${count}.`);
+    if (count !== format.leagueMatchesByGroup[group]) fail(`Group ${group} must have ${format.leagueMatchesByGroup[group]} league matches, found ${count}.`);
   }
   const pairs = new Set<string>();
   const faced = new Map<string, Set<string>>();
@@ -301,8 +313,9 @@ export function validatePlan(plan: DrawPlan): PlanReport {
   }
   for (const id of rosterIds) {
     const own = league.filter((m) => m.teamA.teamId === id || m.teamB.teamId === id).length;
-    const entries = own + (id === result.byeTeamId ? 1 : 0);
-    const wanted = id === result.byeTeamId ? 2 : 3;
+    const hasBye = result.byeTeamId !== null && id === result.byeTeamId;
+    const entries = own + (hasBye ? 1 : 0);
+    const wanted = hasBye ? 2 : 3;
     if (entries !== 3) fail(`Team ${id} must have exactly three league fixture entries (found ${entries}).`);
     if (own !== wanted) fail(`Team ${id} must play ${wanted} league matches (found ${own}).`);
     if ((faced.get(id)?.size ?? 0) !== own) fail(`Team ${id} meets an opponent twice.`);
@@ -313,13 +326,13 @@ export function validatePlan(plan: DrawPlan): PlanReport {
   for (const id of rosterIds) {
     const split = grounds.get(id) ?? { A: 0, B: 0 };
     if (split.A < 1 || split.B < 1) fail(`Team ${id} must play league matches on both grounds (Ground A ${split.A}, Ground B ${split.B}).`);
-    if (id === result.byeTeamId && (split.A !== 1 || split.B !== 1)) fail("The BYE team must play one league match on each ground.");
+    if (result.byeTeamId !== null && id === result.byeTeamId && (split.A !== 1 || split.B !== 1)) fail("The BYE team must play one league match on each ground.");
   }
 
   // Days
   const sat = league.filter((m) => m.day === 1);
   const sun = league.filter((m) => m.day === 2);
-  if (sat.length !== 20) fail(`Expected 20 league matches on Saturday, found ${sat.length}.`);
+  if (sat.length !== format.leagueMatches - 8) fail(`Expected ${format.leagueMatches - 8} league matches on Saturday, found ${sat.length}.`);
   if (sun.length !== 8) fail(`Expected 8 league matches on Sunday, found ${sun.length}.`);
 
   // Total, knockouts, numbering, overs
@@ -327,8 +340,8 @@ export function validatePlan(plan: DrawPlan): PlanReport {
   if (count("quarterfinal") !== 4) fail("Expected four quarterfinals.");
   if (count("semifinal") !== 2) fail("Expected two semifinals.");
   if (count("final") !== 1) fail("Expected one final.");
-  if (matches.length !== ACTUAL_MATCHES) fail(`Expected ${ACTUAL_MATCHES} matches, found ${matches.length}.`);
-  if (matches.length + 1 !== FIXTURE_ENTRIES) fail(`Expected ${FIXTURE_ENTRIES} fixture entries including the BYE.`);
+  if (matches.length !== format.actualMatches) fail(`Expected ${format.actualMatches} matches, found ${matches.length}.`);
+  if (matches.length + (byePosition ? 1 : 0) !== format.fixtureEntries) fail(`Expected ${format.fixtureEntries} fixture entries${byePosition ? " including the BYE" : ""}.`);
   if (new Set(matches.map((m) => m.code)).size !== matches.length) fail("Match codes must be unique.");
   matches.forEach((m, index) => {
     if (m.number !== index + 1) fail(`Match ${m.code} is numbered ${m.number}, expected ${index + 1}.`);
