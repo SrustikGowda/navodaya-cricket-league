@@ -14,8 +14,8 @@ test("the site address is read forgivingly and never crashes the build", () => {
     else process.env.NEXT_PUBLIC_SITE_URL = value;
     return siteUrl("http://fallback.test");
   };
-  assert.equal(read("https://navodaya-cricket-league.up.railway.app"), "https://navodaya-cricket-league.up.railway.app");
-  assert.equal(read("navodaya-cricket-league.up.railway.app"), "https://navodaya-cricket-league.up.railway.app", "a bare host is read as https");
+  assert.equal(read("https://ncl.example.org"), "https://ncl.example.org");
+  assert.equal(read("ncl.example.org"), "https://ncl.example.org", "a bare host is read as https");
   assert.equal(read("  https://example.org/  "), "https://example.org", "spaces and a trailing slash are dropped");
   assert.equal(read("https://example.org/some/path?x=1"), "https://example.org");
   assert.equal(read("http://127.0.0.1:3458"), "http://127.0.0.1:3458");

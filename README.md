@@ -52,7 +52,7 @@ NEXT_PUBLIC_SITE_URL=https://your-domain.example
 
 The return path is `/auth/callback`. Phone OTP is not implemented.
 
-Receipts and uploads use Supabase Storage when `SUPABASE_SERVICE_ROLE_KEY` and both bucket names are set. Otherwise files go to `.data/uploads`. On Railway, attach a volume for that directory or configure Supabase Storage before the event. The service role key stays on the server.
+Receipts and uploads use Supabase Storage when `SUPABASE_SERVICE_ROLE_KEY` and both bucket names are set. Otherwise files go to `.data/uploads`. On a hosted deployment, attach a persistent volume for that directory or configure Supabase Storage before the event. The service role key stays on the server.
 
 ## What must be decided before registration opens
 
@@ -64,7 +64,7 @@ Fee, payee name, UPI ID, payment guidance, refund policy, and playing conditions
 
 ## Deployment
 
-The chosen host is Railway, or any Node host that runs `npm run build` and `npm start`. `railway.toml` is included. Do not deploy from this repository until the environment above is filled in. This project does not publish itself.
+Any Node host that runs `npm run build` and `npm start` works (Node 22 or newer). Do not deploy from this repository until the environment above is filled in. This project does not publish itself.
 
 Health check: `GET /api/health`.
 

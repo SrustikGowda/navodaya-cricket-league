@@ -8,7 +8,7 @@ Checked against the build prompt on 6 October 2026. The approved poster file was
 - [x] Confirmed 2026 facts only; unknowns stay blank
 - [x] Registration is open from 6 October 2026 through 21 November 2026, 23:59 IST. Entry is free (fee 0). Version 2026.1 covers entry only, not match rules. Change the close time in organizer settings if needed.
 - [x] Postgres schema, row-level security, and startup migrations
-- [x] Embedded Postgres for local development; `DATABASE_URL` for Supabase or Railway
+- [x] Embedded Postgres for local development; `DATABASE_URL` for Supabase or any other Postgres host
 - [x] Supabase magic-link sign-in when configured; development sign-in refused in production
 - [x] Captain draft, save, CSV preview, and idempotent submit
 
@@ -53,7 +53,7 @@ Checked against the build prompt on 6 October 2026. The approved poster file was
 - Ball-by-ball scoring (points and net run rate are now calculated from the scores organizers enter)
 - Betting, fantasy, an AI chatbot, or a ball-by-ball scorer
 - Kannada copy, QR check-in, volunteer assignments, jersey or meal counts
-- A public deploy was not part of the first build. The live site is now on Railway: https://navodaya-cricket-league-production.up.railway.app
+- A public deploy was not part of the first build. The site has since been deployed.
 
 ## Milestone 5
 
@@ -66,11 +66,11 @@ Checked against the build prompt on 6 October 2026. The approved poster file was
 - [x] Admin can mark entry fees paid; a "Fee paid" badge shows on team cards
 - [x] Admin can pick QF, SF and final teams and winners; the History entry for the edition builds itself, with awards typed in settings
 - [x] Admin-only delete of the official run (in settings), after which the Real Run can be done again
-- [ ] Set `NCL_FIXTURE_RUN_PASSWORD` in the Railway environment before the draw
+- [ ] Set `NCL_FIXTURE_RUN_PASSWORD` in the deployment environment before the draw
 
 ## Before launch
 
-The public site is https://navodaya-cricket-league-production.up.railway.app. `DATABASE_URL` is the Neon database. Receipts on Railway are stored on a 1 GB volume at `/data`. Local `.env.local` still uses `http://localhost:3000` and `.data/uploads`.
+`DATABASE_URL` is the Neon database. Receipts are stored on a 1 GB volume at `/data`. Local `.env.local` still uses `http://localhost:3000` and `.data/uploads`.
 
 Supabase URL, anon key, and service role are still empty. Authorize the Supabase MCP, then those can be filled in. Replace `ADMIN_EMAILS` with the organizer's real inbox before using magic-link sign-in. The current value is the GitHub noreply address for SrustikGowda.
 
