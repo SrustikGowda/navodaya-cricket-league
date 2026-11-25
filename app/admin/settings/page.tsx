@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { AwardsForm, OfficialRunPanel } from "@/components/draw/settings-panels";
 import { FeeChecklist } from "@/components/fee-checklist";
 import { SeasonSettings } from "@/components/season-settings";
@@ -22,6 +23,11 @@ export default async function SettingsPage() {
   return (
     <div className="settings">
       <h1>Settings</h1>
+      <section className="set-card">
+        <h2>Match schedule</h2>
+        <p>Rearrange the published matches across both days and check each team’s rest gaps.</p>
+        <div className="set-actions"><Link className="button secondary" href="/admin/fixtures/schedule">Edit two-day schedule</Link></div>
+      </section>
       <SeasonSettings season={season} />
       <FeeChecklist teams={teams} fee={fee} />
       <AwardsForm awards={awards} />

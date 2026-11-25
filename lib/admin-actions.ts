@@ -2,7 +2,7 @@ import { getDb } from "./db";
 import { saveAwards } from "./draw/history";
 import { setKnockoutMatch } from "./draw/knockouts";
 import { confirmStandings, parseScoreEntry, recordMatchScore, recordTiebreak } from "./draw/results";
-import { moveMatch, previewReschedule, rescheduleOfficialDraw, type TimetablePatch } from "./draw/timetable";
+import { moveMatch, previewReschedule, reorderOfficialSchedule, rescheduleOfficialDraw, type TimetablePatch } from "./draw/timetable";
 import { DomainError } from "./errors";
 import { saveAnnouncement, confirmAlias, listAnnouncements, listAudit, listHeritageQueue, listMedia, listSponsors, reviewHeritage, saveSponsor, updateArchive } from "./content";
 import { recordRefund, rejectPayment, setFeePaid, verifyPayment } from "./payments";
@@ -197,6 +197,7 @@ export async function adminAction(actor: Actor, body: Record<string, unknown>) {
     });
   }
   if (action === "draw-confirm-standings") return confirmStandings(db, actor);
+  if (action === "draw-reorder-schedule") return reorderOfficialSchedule(db, actor, { drawId: body.drawId, moves: body.moves });
   if (action === "draw-preview-times") return previewReschedule(db, actor, timetablePatch(body.timetable));
   if (action === "draw-apply-times") return rescheduleOfficialDraw(db, actor, { patch: timetablePatch(body.timetable), note: String(body.note ?? "") });
   if (action === "draw-move-match") {

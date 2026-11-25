@@ -40,6 +40,7 @@ export function DrawDesk({ official, fixtures, ties, leagueResults, leagueTotal,
   return (
     <div className="stack">
       <h1>Draw &amp; results</h1>
+      <p><Link className="button secondary" href="/admin/fixtures/schedule">Edit two-day schedule</Link></p>
       <section className="note stack">
         <p>
           <strong>Official draw {official.ref}</strong> published {new Date(official.publishedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST.

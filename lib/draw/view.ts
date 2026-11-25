@@ -58,6 +58,7 @@ function side(planned: PlannedMatch["teamA"]): ViewSide {
 
 export function buildViewMatches(plan: DrawPlan, live?: LiveFixture[]): ViewMatch[] {
   const byCode = new Map((live ?? []).filter((f) => f.code).map((f) => [f.code as string, f]));
+  const dayByDate = new Map(plan.matches.map((match) => [match.date, match.day]));
   return plan.matches.map((match) => {
     const row = byCode.get(match.code);
     let a = side(match.teamA);
@@ -75,19 +76,20 @@ export function buildViewMatches(plan: DrawPlan, live?: LiveFixture[]): ViewMatc
         date = parts.date;
       }
     }
+    const ground = row?.ground === GROUND_NAMES.B ? "B" : row?.ground === GROUND_NAMES.A ? "A" : match.ground;
     return {
       code: match.code,
       number: match.number,
       stage: match.stage,
       group: match.group,
-      day: match.day,
+      day: dayByDate.get(date) ?? match.day,
       date,
       slotIndex: match.slotIndex,
       startsAt,
       startMinutes,
       durationMinutes: row?.durationMinutes ?? match.durationMinutes,
       overs: row?.overs ?? match.overs,
-      ground: match.ground,
+      ground,
       groundName: row?.ground ?? GROUND_NAMES[match.ground],
       a,
       b,

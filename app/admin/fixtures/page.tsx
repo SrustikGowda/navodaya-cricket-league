@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { FixtureDesk } from "@/components/fixture-desk";
 import { adminSnapshot } from "@/lib/admin-actions";
 import { getActor } from "@/lib/auth";
@@ -15,6 +16,7 @@ export default async function FixturesAdminPage() {
   const teams = registrations.filter((registration) => registration.status === "approved").map((team) => ({ id: team.id, name: team.teamName }));
   return (
     <>
+      <p><Link className="button gold" href="/admin/fixtures/schedule">Edit two-day schedule</Link></p>
       <FixtureDesk
         grounds={grounds.map((ground) => ({ id: ground.id, name: ground.name }))}
         groups={groups.map((group) => ({ id: group.id, name: group.name }))}

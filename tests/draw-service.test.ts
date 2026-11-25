@@ -6,7 +6,10 @@ import type { Db } from "../lib/db";
 import { loadBoard } from "../lib/draw/board";
 import { planHash, verifyPlan } from "../lib/draw/plan";
 import { confirmStandings, parseScoreEntry, recordMatchScore, recordTiebreak, resolveBracketTx } from "../lib/draw/results";
-import { moveMatch, previewReschedule, rescheduleOfficialDraw } from "../lib/draw/timetable";
+import { putMatchInSlot, teamRestGaps, type ScheduleMatch } from "../lib/draw/schedule-editor";
+import { loadScheduleEditor, moveMatch, previewReschedule, reorderOfficialSchedule, rescheduleOfficialDraw } from "../lib/draw/timetable";
+import { checkSchedule } from "../lib/draw/validate";
+import { buildViewMatches } from "../lib/draw/view";
 import {
   authorizeDrawPassword,
   drawReadiness,
@@ -548,6 +551,64 @@ test("organizers can change the times of unplayed matches without touching a sin
   assert.equal((await liveFixtures(db, draw.id)).find((f) => f.code === "M03")?.startsAt, "2026-11-28T02:55:00.000Z");
   assert.equal(await opponents(), before);
   await db.close();
+});
+
+test("rearranging published slots is atomic and keeps pairings, versions and the public timetable in sync", async (t) => {
+  const db = await freshDb();
+  t.after(() => db.close());
+  const admin = await organizer(db);
+  const player = await captain(db);
+  await seedRoster(db, TEAM_NAMES_20);
+  const { draw } = await runOfficialDraw(db, admin, { requestId: nextRequest() });
+  const board = await loadScheduleEditor(db);
+  assert.ok(board);
+  assert.deepEqual(board.days, DAYS);
+  assert.equal(board.matches.length, 37);
+  assert.equal(board.teams.length, 20);
+
+  const first = board.matches.find((match) => match.code === "M01")!;
+  const final = board.matches.find((match) => match.code === "F")!;
+  const swap = (a: ScheduleMatch, b: ScheduleMatch) => ({ drawId: draw.id, moves: [
+    { fixtureId: a.id, slotId: b.id, version: a.version },
+    { fixtureId: b.id, slotId: a.id, version: b.version },
+  ] });
+  const pair = board.matches.flatMap((a, index) => board.matches.slice(index + 1).map((b) => [a, b] as const)).find(([a, b]) =>
+    a.date !== b.date && a.ground !== b.ground && checkSchedule(board.matches.map((match) => (
+      match.id === a.id ? putMatchInSlot(match, b) : match.id === b.id ? putMatchInSlot(match, a) : match
+    ))).errors.length === 0,
+  );
+  assert.ok(pair, "the template supports a valid swap across days and grounds");
+  const [a, b] = pair;
+  const valid = swap(a, b);
+
+  await assert.rejects(() => reorderOfficialSchedule(db, player, valid), (error) => codeOf(error) === "forbidden");
+  await assert.rejects(() => reorderOfficialSchedule(db, admin, swap(first, final)), (error) => codeOf(error) === "timetable_invalid");
+  await assert.rejects(() => reorderOfficialSchedule(db, admin, { ...valid, moves: [valid.moves[0], { ...valid.moves[1], teamAId: b.teams[0] }] }), (error) => codeOf(error) === "invalid_reorder");
+  assert.deepEqual((await loadScheduleEditor(db))?.matches, board.matches);
+
+  const result = await reorderOfficialSchedule(db, admin, valid);
+  assert.equal(result.count, 2);
+  for (const [source, destination] of [[a, b], [b, a]]) {
+    const current = result.matches.find((match) => match.id === source.id);
+    assert.ok(current);
+    assert.deepEqual([current.date, current.startMinutes, current.ground], [destination.date, destination.startMinutes, destination.ground]);
+    assert.deepEqual([current.teams, current.teamALabel, current.teamBLabel, current.durationMinutes], [source.teams, source.teamALabel, source.teamBLabel, source.durationMinutes]);
+    assert.equal(current.version, source.version + 1);
+  }
+  const publicMatches = buildViewMatches(draw.plan, await liveFixtures(db, draw.id));
+  assert.equal(publicMatches.find((match) => match.code === a.code)?.day, b.date === DAYS[1] ? 2 : 1);
+  assert.equal(publicMatches.find((match) => match.code === a.code)?.ground, b.ground);
+  assert.equal((await db.query("select id from fixtures where id in ($1, $2) and calendar_sequence = 1", [a.id, b.id])).length, 2);
+  assert.equal((await db.query("select id from audit_events where action = 'draw.reorder_schedule'")).length, 1);
+  assert.equal(planHash((await getOfficialDraw(db))!.plan), planHash(draw.plan));
+  await assert.rejects(() => reorderOfficialSchedule(db, admin, valid), (error) => codeOf(error) === "version_conflict");
+
+  await db.execute("update fixtures set status = 'in_progress' where id = $1", [a.id]);
+  await assert.rejects(() => reorderOfficialSchedule(db, admin, swap({ ...a, version: a.version + 1 }, { ...b, version: b.version + 1 })), (error) => codeOf(error) === "locked_match");
+
+  const overnight = teamRestGaps(board.teams, result.matches).flatMap((team) => team.gaps).find(({ before, after }) => before.date !== after.date);
+  assert.ok(overnight);
+  assert.equal(overnight.minutes, 24 * 60 + overnight.after.startMinutes - overnight.before.startMinutes - overnight.before.durationMinutes);
 });
 
 function walk(directory: string, found: string[] = []): string[] {

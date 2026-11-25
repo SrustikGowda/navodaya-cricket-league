@@ -111,6 +111,10 @@ export type ScheduleReport = { errors: string[]; notes: string[]; minLeagueRestM
 
 const span = (m: TimedMatch) => ({ start: m.startMinutes, end: m.startMinutes + m.durationMinutes });
 
+export function scheduleMinute(match: Pick<TimedMatch, "date" | "startMinutes">): number {
+  return Date.parse(`${match.date}T00:00:00Z`) / 60_000 + match.startMinutes;
+}
+
 /**
  * Checks times alone: ground and team clashes, rest between a team's matches, daylight, and the order of the
  * knockouts. Used for the draw and again whenever an organizer changes the times, so both obey the same rules.
@@ -157,11 +161,11 @@ export function checkSchedule(matches: TimedMatch[]): ScheduleReport {
 
   // Knockout order: qualification window, then feeders before the matches they feed.
   const byCode = new Map(matches.map((m) => [m.code, m]));
-  const leagueEnd = Math.max(0, ...matches.filter((m) => m.stage === "league" && m.date === (byCode.get("QF1")?.date ?? m.date)).map((m) => m.startMinutes + m.durationMinutes));
+  const leagueEnd = Math.max(0, ...matches.filter((m) => m.stage === "league").map((m) => scheduleMinute(m) + m.durationMinutes));
   for (const pairing of QF_PAIRINGS) {
     const qf = byCode.get(pairing.code);
     if (!qf) continue;
-    const window = qf.startMinutes - leagueEnd;
+    const window = scheduleMinute(qf) - leagueEnd;
     if (leagueEnd > 0 && window < MIN_QUALIFICATION_WINDOW_MINUTES) fail(`${qf.code} starts only ${window} minutes after the last league match. Standings need at least ${MIN_QUALIFICATION_WINDOW_MINUTES}.`);
   }
   const after = (code: string, feeders: readonly string[], what: string) => {
@@ -186,7 +190,7 @@ export function checkSchedule(matches: TimedMatch[]): ScheduleReport {
 
   const qfs = matches.filter((m) => m.stage === "quarterfinal");
   const final = byCode.get("F");
-  if (qfs.length > 0 && leagueEnd > 0) notes.push(`Standings window: ${Math.min(...qfs.map((m) => m.startMinutes)) - leagueEnd} minutes after the last league match.`);
+  if (qfs.length > 0 && leagueEnd > 0) notes.push(`Standings window: ${Math.min(...qfs.map(scheduleMinute)) - leagueEnd} minutes after the last league match.`);
   if (final) notes.push(`The final is booked ${Math.floor(final.durationMinutes)} minutes and is scheduled to end at ${clock(final.startMinutes + final.durationMinutes)}.`);
   return { errors, notes, minLeagueRestMinutes: Number.isFinite(minRest) ? minRest : 0 };
 }
